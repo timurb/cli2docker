@@ -24,7 +24,10 @@ type buildFlags struct {
 type shimFlags struct {
 	Image string
 	Name  string
+	MountCwd bool
 }
+
+const defaultWorkDir = "/work"
 
 // main is the program entrypoint.
 func main() {
@@ -85,6 +88,14 @@ func newShimCmd() *cobra.Command {
 			if err := ensureCommand("docker"); err != nil {
 				return err
 			}
+			execLine := "exec docker run --rm ${tty_flags} \"${image_ref}\" \"$@\""
+			if opts.MountCwd {
+				execLine = fmt.Sprintf(
+					"exec docker run --rm ${tty_flags} -v \"${PWD}:%s\" -w %s \"${image_ref}\" \"$@\"",
+					defaultWorkDir,
+					defaultWorkDir,
+				)
+			}
 			lines := []string{
 				"#!/usr/bin/env sh",
 				"set -e",
@@ -97,7 +108,7 @@ func newShimCmd() *cobra.Command {
 				"  tty_flags=\"\"",
 				"fi",
 				"",
-				"exec docker run --rm ${tty_flags} \"${image_ref}\" \"$@\"",
+				execLine,
 			}
 			fmt.Fprint(cmd.OutOrStdout(), strings.Join(lines, "\n")+"\n")
 			return nil
@@ -106,6 +117,7 @@ func newShimCmd() *cobra.Command {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Image, "image", "", "Image reference")
 	flags.StringVar(&opts.Name, "name", "", "Optional name for the shim file")
+	flags.BoolVar(&opts.MountCwd, "mount-cwd", false, "Mount current directory into the container")
 	_ = cmd.MarkFlagRequired("image")
 	return cmd
 }
