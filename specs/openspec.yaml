@@ -9,23 +9,30 @@ info:
 
 context:
   problem: |
-    Packaging many small Node.js CLI tools into containers is repetitive when each
+    Node.JS ecosystem is well known for all kinds of new exploits and malware getting published regularly.
+    As long as you don't pay attention to Node.JS supply chain using node.js CLI tools provides unnecessary
+    security risk.
+    Apparently a simple idea is to reduce blast radius by packaging such CLI tools into docker container. 
+    At the same time packaging many small Node.js CLI tools into containers is repetitive and error prone when each
     tool requires a similar Dockerfile.
   goals:
     - Provide a script-first workflow to build Docker images for Node.js CLIs.
     - Make packaging fast and consistent across multiple tools.
     - Keep setup lightweight and easy to understand.
+    - Secure by default: use best security practices by default as long as it doesn't interfere with user experience.
   non_goals:
+    - Packaging python CLI tools or any other languages. Could be a feature for some later relase.
     - Multi-arch builds or complex CI/CD pipelines.
     - Registry publishing or image signing.
     - General-purpose Dockerfile generation for arbitrary apps.
 
 requirements:
   functional:
-    - Accept an npm package name or local path and a CLI entrypoint.
+    - Accept an npm package name and a CLI entrypoint.
     - Build a Docker image that can run the CLI with arguments.
     - Allow naming and tagging the resulting image.
     - Provide a clear, minimal set of defaults that can be overridden.
+    - Provide an OS level alias or shim to run the Docker container using a single command
   non_functional:
     - Work on macOS and Linux with Docker installed.
     - Keep the script runtime dependencies minimal.
@@ -37,7 +44,7 @@ constraints:
 
 assumptions:
   - Docker is installed and running.
-  - The CLI tool is distributed via npm or a local Node.js project.
+  - The CLI tool is distributed via npm.
 
 deliverables:
   - A set of scripts to build Docker images for Node.js CLI tools.
