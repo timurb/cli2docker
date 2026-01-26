@@ -10,7 +10,7 @@ schema: spec-driven
 #     Domain: e-commerce platform
 
 context: |
-  Tech stack: bash, python, go
+  Tech stack: go
 
 
 # Per-artifact rules (optional)

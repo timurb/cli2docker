@@ -21,7 +21,7 @@ context:
     - Keep setup lightweight and easy to understand.
     - Secure by default: use best security practices by default as long as it doesn't interfere with user experience.
   non_goals:
-    - Packaging python CLI tools or any other languages. Could be a feature for some later relase.
+    - Packaging CLI tools from other languages. Could be a feature for some later release.
     - Multi-arch builds or complex CI/CD pipelines.
     - Registry publishing or image signing.
     - General-purpose Dockerfile generation for arbitrary apps.
@@ -40,14 +40,14 @@ requirements:
 
 constraints:
   - Avoid requiring users to author Dockerfiles for common cases.
-  - Prefer shell, Python, or Go implementations over heavy frameworks.
+  - Prefer Go implementation over heavy frameworks.
 
 assumptions:
   - Docker is installed and running.
   - The CLI tool is distributed via npm.
 
 deliverables:
-  - A set of scripts to build Docker images for Node.js CLI tools.
-  - Reference implementations in Bash, Python, and Go for MVP comparison.
+  - A Go CLI tool to build Docker images for Node.js CLI tools.
+  - A Go CLI implementation for the MVP.
   - Usage documentation and examples in `README.md`.
   - This OpenSpec file kept up to date as scope evolves.

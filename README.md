@@ -12,13 +12,11 @@ Quickly package Node.js CLI tools into Docker images without hand-writing a Dock
 - Managing releases, registries, or image signing.
 
 ## Status
-MVP implementations are available in Bash, Python, and Go.
+MVP implementation is available in Go.
 
 ## Repository layout
 - `specs/openspec.yaml` - product/spec description for the project.
-- `bin/node2docker.bash` - Bash CLI implementation.
-- `bin/node2docker.py` - Python CLI implementation.
-- `go/` - Go CLI implementation.
+- `main.go` - Go CLI implementation.
 - `.gitignore` - common ignores for scripts and tooling.
 - `.editorconfig` - basic formatting rules.
 - `AGENTS.md` - guidance for future contributors/agents.
@@ -31,7 +29,7 @@ MVP implementations are available in Bash, Python, and Go.
 Build an image for a Node.js CLI and tag it:
 
 ```bash
-./bin/node2docker.bash build --package eslint --bin eslint --image acme/eslint
+go run . build --package eslint --bin eslint --image acme/eslint
 ```
 
 Run it directly with Docker:
@@ -43,7 +41,7 @@ docker run --rm -it acme/eslint:latest --version
 Print a shim and install it manually:
 
 ```bash
-./bin/node2docker.bash shim --image acme/eslint:latest > ~/.local/bin/eslint
+go run . shim --image acme/eslint:latest > ~/.local/bin/eslint
 chmod +x ~/.local/bin/eslint
 ```
 
@@ -52,17 +50,9 @@ chmod +x ~/.local/bin/eslint
 - By default the image drops to the `node` user for runtime. Use `--no-user` for images without that user.
 - Shim scripts are printed to stdout. Redirect to a file on your `PATH`.
 
-## Other implementations
-Python:
+## Build
 
 ```bash
-./bin/node2docker.py build --package eslint --bin eslint --image acme/eslint
-./bin/node2docker.py shim --image acme/eslint:latest > ~/.local/bin/eslint
-```
-
-Go:
-
-```bash
-go run ./go build --package eslint --bin eslint --image acme/eslint
-go run ./go shim --image acme/eslint:latest > ~/.local/bin/eslint
+go build -o node2docker-go .
+./node2docker-go build --package eslint --bin eslint --image acme/eslint
 ```

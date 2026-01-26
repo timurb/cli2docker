@@ -149,6 +149,7 @@ When reasoning through problems, apply these principles:
 - When testing that a function produces YAML or JSON the tests must include the resulting YAML as a docstring or a fixture. The intent is to reduce cognitive load on developer.
 - CLI scripts must start with a shebang.
 - Add docstrings to all functions and methods.
+- Ignore complexity, function size, and similar constraints for CLI argument parsing and flag handling.
 
 ## Decision Framework
 
