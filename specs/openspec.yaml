@@ -1,0 +1,45 @@
+openspec: "0.1"
+info:
+  title: node2docker
+  summary: Package Node.js CLI tools into Docker images without hand-written Dockerfiles.
+  description: |
+    This project provides simple scripts to containerize Node.js CLI tools quickly.
+    The focus is on reducing boilerplate while keeping the build process explicit and repeatable.
+  status: draft
+
+context:
+  problem: |
+    Packaging many small Node.js CLI tools into containers is repetitive when each
+    tool requires a similar Dockerfile.
+  goals:
+    - Provide a script-first workflow to build Docker images for Node.js CLIs.
+    - Make packaging fast and consistent across multiple tools.
+    - Keep setup lightweight and easy to understand.
+  non_goals:
+    - Multi-arch builds or complex CI/CD pipelines.
+    - Registry publishing or image signing.
+    - General-purpose Dockerfile generation for arbitrary apps.
+
+requirements:
+  functional:
+    - Accept an npm package name or local path and a CLI entrypoint.
+    - Build a Docker image that can run the CLI with arguments.
+    - Allow naming and tagging the resulting image.
+    - Provide a clear, minimal set of defaults that can be overridden.
+  non_functional:
+    - Work on macOS and Linux with Docker installed.
+    - Keep the script runtime dependencies minimal.
+    - Be transparent about build steps and artifacts.
+
+constraints:
+  - Avoid requiring users to author Dockerfiles for common cases.
+  - Prefer shell or Python implementations over heavy frameworks.
+
+assumptions:
+  - Docker is installed and running.
+  - The CLI tool is distributed via npm or a local Node.js project.
+
+deliverables:
+  - A set of scripts to build Docker images for Node.js CLI tools.
+  - Usage documentation and examples in `README.md`.
+  - This OpenSpec file kept up to date as scope evolves.
