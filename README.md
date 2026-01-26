@@ -1,5 +1,7 @@
 # cli2docker
 
+**Disclaimer:** this code was mostly written using ChatGPT Codex 5.2
+
 Quickly package Node.js CLI tools into Docker images without hand-writing a Dockerfile each time.
 
 ## Goals
