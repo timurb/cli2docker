@@ -12,15 +12,57 @@ Quickly package Node.js CLI tools into Docker images without hand-writing a Dock
 - Managing releases, registries, or image signing.
 
 ## Status
-Bootstrapped repo structure. Implementation and usage will be added next.
+MVP implementations are available in Bash, Python, and Go.
 
 ## Repository layout
 - `specs/openspec.yaml` - product/spec description for the project.
+- `bin/node2docker.bash` - Bash CLI implementation.
+- `bin/node2docker.py` - Python CLI implementation.
+- `go/` - Go CLI implementation.
 - `.gitignore` - common ignores for scripts and tooling.
 - `.editorconfig` - basic formatting rules.
 - `AGENTS.md` - guidance for future contributors/agents.
 
-## Planned workflow (placeholder)
-1. Provide a CLI name and entrypoint.
-2. Run a script to generate a Docker build context and image.
-3. Run the resulting container like any standard CLI tool.
+## Requirements
+- Docker installed and running.
+- A published npm package providing a CLI binary.
+
+## Quick start
+Build an image for a Node.js CLI and tag it:
+
+```bash
+./bin/node2docker.bash build --package eslint --bin eslint --image acme/eslint
+```
+
+Run it directly with Docker:
+
+```bash
+docker run --rm -it acme/eslint:latest --version
+```
+
+Print a shim and install it manually:
+
+```bash
+./bin/node2docker.bash shim --image acme/eslint:latest > ~/.local/bin/eslint
+chmod +x ~/.local/bin/eslint
+```
+
+## Notes
+- The default base image is `node:20-alpine`. Use `--base` to override it.
+- By default the image drops to the `node` user for runtime. Use `--no-user` for images without that user.
+- Shim scripts are printed to stdout. Redirect to a file on your `PATH`.
+
+## Other implementations
+Python:
+
+```bash
+./bin/node2docker.py build --package eslint --bin eslint --image acme/eslint
+./bin/node2docker.py shim --image acme/eslint:latest > ~/.local/bin/eslint
+```
+
+Go:
+
+```bash
+go run ./go build --package eslint --bin eslint --image acme/eslint
+go run ./go shim --image acme/eslint:latest > ~/.local/bin/eslint
+```

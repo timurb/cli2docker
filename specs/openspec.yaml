@@ -40,7 +40,7 @@ requirements:
 
 constraints:
   - Avoid requiring users to author Dockerfiles for common cases.
-  - Prefer shell or Python implementations over heavy frameworks.
+  - Prefer shell, Python, or Go implementations over heavy frameworks.
 
 assumptions:
   - Docker is installed and running.
@@ -48,5 +48,6 @@ assumptions:
 
 deliverables:
   - A set of scripts to build Docker images for Node.js CLI tools.
+  - Reference implementations in Bash, Python, and Go for MVP comparison.
   - Usage documentation and examples in `README.md`.
   - This OpenSpec file kept up to date as scope evolves.
