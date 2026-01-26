@@ -1,6 +1,6 @@
 openspec: "0.1"
 info:
-  title: node2docker
+  title: cli2docker
   summary: Package Node.js CLI tools into Docker images without hand-written Dockerfiles.
   description: |
     This project provides simple scripts to containerize Node.js CLI tools quickly.

@@ -1,7 +1,7 @@
 .PHONY: build run fmt test tidy clean
 
 build:
-	go build -o node2docker-go .
+	go build -o cli2docker .
 
 run:
 	go run .
@@ -16,4 +16,4 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -f node2docker-go
+	rm -f cli2docker

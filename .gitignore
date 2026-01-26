@@ -24,8 +24,7 @@ Thumbs.db
 coverage/
 dist/
 bin/
-/node2docker-go
-/node2docker
+/cli2docker
 
 # Editors
 .vscode/

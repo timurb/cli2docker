@@ -1,4 +1,4 @@
-module node2docker
+module cli2docker
 
 go 1.22
 

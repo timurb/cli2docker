@@ -36,7 +36,7 @@ func main() {
 // newRootCmd builds the root command.
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "node2docker-go",
+		Use:          "cli2docker",
 		Short:        "Package Node.js CLI tools into Docker images",
 		SilenceUsage: true,
 	}
@@ -121,7 +121,7 @@ func ensureCommand(name string) error {
 // buildWithOptions runs the build workflow.
 func buildWithOptions(opts buildFlags) error {
 	image := buildImageRef(opts.Image, opts.Tag)
-	tmpDir, err := os.MkdirTemp("", "node2docker-")
+	tmpDir, err := os.MkdirTemp("", "cli2docker-")
 	if err != nil {
 		return err
 	}

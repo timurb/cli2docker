@@ -1,4 +1,4 @@
-# node2docker
+# cli2docker
 
 Quickly package Node.js CLI tools into Docker images without hand-writing a Dockerfile each time.
 
@@ -53,6 +53,6 @@ chmod +x ~/.local/bin/eslint
 ## Build
 
 ```bash
-go build -o node2docker-go .
-./node2docker-go build --package eslint --bin eslint --image acme/eslint
+go build -o cli2docker .
+./cli2docker build --package eslint --bin eslint --image acme/eslint
 ```
