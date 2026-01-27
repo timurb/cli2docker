@@ -22,12 +22,15 @@ type buildFlags struct {
 }
 
 type shimFlags struct {
-	Image string
-	Name  string
-	MountCwd bool
+	Image       string
+	Name        string
+	MountCwd    bool
+	MountHome   string
+	MountHomeRW bool
 }
 
 const defaultWorkDir = "/work"
+const defaultContainerHome = "/home/node"
 
 // main is the program entrypoint.
 func main() {
@@ -88,13 +91,9 @@ func newShimCmd() *cobra.Command {
 			if err := ensureCommand("docker"); err != nil {
 				return err
 			}
-			execLine := "exec docker run --rm ${tty_flags} \"${image_ref}\" \"$@\""
-			if opts.MountCwd {
-				execLine = fmt.Sprintf(
-					"exec docker run --rm ${tty_flags} -v \"${PWD}:%s\" -w %s \"${image_ref}\" \"$@\"",
-					defaultWorkDir,
-					defaultWorkDir,
-				)
+			execLine, err := buildShimExecLine(opts)
+			if err != nil {
+				return err
 			}
 			lines := []string{
 				"#!/usr/bin/env sh",
@@ -118,8 +117,79 @@ func newShimCmd() *cobra.Command {
 	flags.StringVar(&opts.Image, "image", "", "Image reference")
 	flags.StringVar(&opts.Name, "name", "", "Optional name for the shim file")
 	flags.BoolVar(&opts.MountCwd, "mount-cwd", false, "Mount current directory into the container")
+	flags.StringVar(&opts.MountHome, "mount-home", "", "Mount a directory from your home into the container home (read-only)")
+	flags.BoolVar(&opts.MountHomeRW, "mount-home-rw", false, "Mount the home directory path read-write")
 	_ = cmd.MarkFlagRequired("image")
 	return cmd
+}
+
+// buildShimExecLine builds the docker run command for the shim.
+func buildShimExecLine(opts shimFlags) (string, error) {
+	args := []string{"exec docker run --rm ${tty_flags}"}
+	if opts.MountCwd {
+		args = append(args, fmt.Sprintf("-v \"${PWD}:%s\" -w %s", defaultWorkDir, defaultWorkDir))
+	}
+	if opts.MountHomeRW && opts.MountHome == "" {
+		return "", fmt.Errorf("mount-home-rw requires --mount-home")
+	}
+	if opts.MountHome != "" {
+		hostPath, containerPath, err := resolveHomeMount(opts.MountHome)
+		if err != nil {
+			return "", err
+		}
+		mode := "ro"
+		if opts.MountHomeRW {
+			mode = "rw"
+		}
+		args = append(args, fmt.Sprintf("-v %q", hostPath+":"+containerPath+":"+mode))
+	}
+	args = append(args, "\"${image_ref}\" \"$@\"")
+	return strings.Join(args, " "), nil
+}
+
+// resolveHomeMount returns the host and container paths for a home mount.
+func resolveHomeMount(path string) (string, string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", "", fmt.Errorf("mount-home path is empty")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", err
+	}
+	expanded, err := expandHomePath(home, path)
+	if err != nil {
+		return "", "", err
+	}
+	if !filepath.IsAbs(expanded) {
+		expanded = filepath.Join(home, expanded)
+	}
+	absPath := filepath.Clean(expanded)
+	relPath, err := filepath.Rel(home, absPath)
+	if err != nil {
+		return "", "", err
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("path must be within home: %s", home)
+	}
+	containerPath := defaultContainerHome
+	if relPath != "." {
+		containerPath = filepath.ToSlash(filepath.Join(defaultContainerHome, relPath))
+	}
+	return absPath, containerPath, nil
+}
+
+// expandHomePath expands ~ and ~/ paths using the provided home directory.
+func expandHomePath(home string, path string) (string, error) {
+	if path == "~" {
+		return home, nil
+	}
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
+	}
+	if strings.HasPrefix(path, "~") {
+		return "", fmt.Errorf("unsupported home shorthand: %s", path)
+	}
+	return path, nil
 }
 
 // ensureCommand checks if an executable exists.
