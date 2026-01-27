@@ -65,7 +65,7 @@ When reasoning through problems, apply these principles:
     - **Stop Triggers:**
         - If validation code > 50% of logic -> STOP.
         - If >3 edge case tests needed -> STOP.
-        - If importing `Any` -> STOP.
+        - If using `any`/`interface{}` in core logic -> STOP.
 4.  **Operation (Verification):**
     - Run tests. If refactoring breaks tests but logic is fine -> tests are bad.
 
@@ -147,9 +147,9 @@ When reasoning through problems, apply these principles:
 - When using bullets in responses, include an ID for each bullet so the user can refer to them.
 - Always use the project `venv` Python for commands and tests.
 - Tests must use defined behavior and avoid implicit paths; pass explicit paths/working dir (exception: tools installed inside the venv).
-- When testing that a function produces YAML or JSON the tests must include the resulting YAML as a docstring or a fixture. The intent is to reduce cognitive load on developer.
+- When testing that a function produces YAML or JSON the tests must include the resulting YAML as a comment or a fixture. The intent is to reduce cognitive load on developer.
 - CLI scripts must start with a shebang.
-- Add docstrings to all functions and methods.
+- Add Go doc comments for exported functions/types/vars; unexported ones only when non-obvious.
 - Ignore complexity, function size, and similar constraints for CLI argument parsing and flag handling.
 
 ## Decision Framework
@@ -201,23 +201,23 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 ### Functional Paradigm
 
-- **Immutability**: Use immutable types, avoid implicit mutations, return new instances
+- **Immutability**: Favor clarity and Go idioms. Mutation of slices/maps/structs is normal; avoid shared mutable state across goroutines.
 - **Pure Functions**: Deterministic (same input → same output), no hidden dependencies
 - **No Exotic Constructs**: Stick to language idioms unless monads are natively supported
 
 ### Error Handling: Explicit Over Hidden
 
-- Never swallow errors silently (empty catch blocks are bugs)
-- Handle exceptions at boundaries, not deep in call stack
-- Return error values when codebase uses them (Result, Option, error tuples)
-- If codebase uses exceptions — use exceptions consistently, but explicitly
-- Fail fast for programmer errors, handle gracefully for expected failures
+- Never ignore errors silently (discarded errors are bugs)
+- Handle errors at boundaries, not deep in call stack
+- Use error returns consistently; wrap with `%w` when adding context
+- Panic only for programmer errors / invariants
+- Fail fast for programmer errors, handle expected failures gracefully
 - Keep execution flow deterministic and linear
 
 ### Architecture: Trust Boundaries
 
 - **Public/Entry Functions:** MUST perform validation and sanitization. This is the "Shell".
-- **Internal/Private Functions:** MUST assume inputs are already validated. Do NOT add defensive checks (`if x is None`) in internal helpers.
+- **Internal/Private Functions:** MUST assume inputs are already validated. Do NOT add defensive checks (`if x == nil`) in internal helpers.
 - **Benefit:** This keeps internal functions small, readable, and focused purely on logic (Algorithm), removing the noise of repeated checks.
 
 ### Assurance Profiles
@@ -225,14 +225,14 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 **Profile: Prototype (Lean) - default profile**
 - **Goal:** Low Cost, High Readability, Speed.
 - **Philosophy:** Fail Fast / Offensive Programming.
-- **Inputs:** Do not validate inputs inside business logic. Assume the caller passed correct data. If not — let it crash with a standard Python exception.
+- **Inputs:** Do not validate inputs inside business logic. Assume the caller passed correct data. If not — fail fast with a standard error.
 - **Scope:** Handle the main use case only. Ignore rare edge cases.
 - **Tests:** Only happy path and 1-2 critical failures.
 
 **Profile: Production (Robust)**
 - **Goal:** High Reliability, Robustness.
 - **Philosophy:** Defensive Programming.
-- **Inputs:** Validate everything at boundaries. Convert errors to domain-specific Exceptions.
+- **Inputs:** Validate everything at boundaries. Convert errors to domain-specific errors.
 - **Scope:** Handle nulls, empty strings, and malformed data gracefully.
 - **Tests:** Positive, negative, and boundary tests.
 
@@ -240,7 +240,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 - Self-documenting code for simple logic
 - Comments only for complex invariants and business logic (explain WHY not WHAT)
-- Keep functions small and focused: 20 lines max (docstrings don't count to this number), all exceptions must be confirmed with me.
+- Keep functions small and focused: 20 lines max (comments don't count to this number), all exceptions must be confirmed with me.
 - Exception: helper scripts under `scripts/` are exempt from function size and cognitive complexity limits.
 - If the function is larger that 20 lines you should split it into several small functions.
 - Data structure builder functions are an exception to the 20-line limit; they may be larger without prior confirmation.
@@ -255,7 +255,7 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 
 1.  **Prediction Gate:** Before implementation, if a feature requires >50% of code for validation/error handling (vs actual business logic), PAUSE and ask the user if we can simplify requirements.
 2.  **Test Explosion:** If a function needs >3 negative test cases (invalid inputs), suggest tightening the input types instead of writing the tests.
-3.  **Ambiguity Check:** If you have to import `typing.Any` or `typing.Union` for core logic, ask if we can strictly type it instead.
+3.  **Ambiguity Check:** If you have to use `any` or `interface{}` for core logic, ask if we can strictly type it instead.
 
 #### Tools for quality testing
 
@@ -286,7 +286,7 @@ These scripts are located in `scripts/` directory and don't participate in proje
 
 - If function signature is the contract → test the contract
 - Public interfaces and use cases only
-- Never test internal/private functions directly
+- Prefer testing exported behavior; test unexported helpers when they contain non-trivial logic
 
 **Never test:**
 
@@ -300,12 +300,11 @@ These scripts are located in `scripts/` directory and don't participate in proje
 
 ### Code Style
 
-- DO NOT ADD COMMENTS unless asked
+- Use Go doc comments for exported identifiers. Avoid comments for obvious code.
 - Follow existing codebase conventions
 - Check what libraries/frameworks are already in use
 - Mimic existing code style, naming conventions, typing
 - Never assume a non-standard library is available
-- Always use an external library if custom code to provide required functionality would exceed one function (20 lines max per function).
 - Never expose or log secrets and keys
 
 ## Critical Reminders
