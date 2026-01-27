@@ -27,6 +27,7 @@
 
 - `cli2docker build` produces a runnable image for a published npm CLI.
 - `cli2docker shim` produces a working shim script.
+- README contains usage documentation and examples.
 
 ## Architecture
 
@@ -42,6 +43,14 @@
 
 - `build` always uses a generated Dockerfile.
 - `shim` always emits a shell script to stdout.
+
+## Design decisions (from ADRs)
+
+- `shim` mounts current directory only when `--mount-cwd` is set; mount point is `/work`.
+- `shim` home mounts are limited to a single path inside `$HOME`, read-only by default, with `--mount-home-rw` for write access.
+- `shim` prints its script to stdout; users choose where to save it.
+- CLI uses `spf13/cobra` for subcommands and flag parsing.
+- Multi-language prototypes were evaluated; Go was chosen (historical, superseded).
 
 ## Capabilities
 

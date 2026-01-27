@@ -12,6 +12,7 @@
 - Default tag is `latest` if omitted.
 - `--no-user` omits `USER` from Dockerfile.
 - `--no-cache` passes `--no-cache` to Docker.
+- Runtime user defaults to `node` unless `--no-user` is set.
 
 ## Usage workflows
 
