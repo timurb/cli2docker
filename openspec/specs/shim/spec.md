@@ -1,8 +1,39 @@
-## Purpose
+## Overview (Black Box)
 
-Defines requirements for `cli2docker shim`, including output behavior and mount rules.
+`cli2docker shim` prints a shell shim script to stdout to run a Docker image as a CLI.
 
-## Requirements
+## Goals / Non-Goals
+
+**Goals:**
+- Generate a shim script to stdout.
+- Support mounting `$PWD` and one `$HOME` path with read-only default.
+
+**Non-Goals:**
+- Auto-installation into `PATH`.
+- Multiple `$HOME` mounts.
+- Arbitrary host paths outside `$HOME`.
+
+## Entities
+
+- **Shim script**: shell script emitted to stdout.
+- **Mounts**: `$PWD` and one `$HOME` path.
+
+## Interfaces
+
+- Command: `cli2docker shim`
+- Flags: `--image`, `--mount-cwd`, `--mount-home`, `--mount-home-rw`
+
+## Events / Triggers
+
+- User runs `cli2docker shim ...`
+
+## Behavior (White Box)
+
+- Emits a shell script to stdout.
+- For `--mount-cwd`, inserts `-v "${PWD}:/work"` and `-w /work`.
+- For `--mount-home`, resolves a path within `$HOME` and mounts under `/home/node/<relative>`.
+
+## Requirements (Test Cases)
 
 ### Requirement: Generate shim to stdout
 

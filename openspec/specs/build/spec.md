@@ -1,8 +1,40 @@
-## Purpose
+## Overview (Black Box)
 
-Defines requirements for `cli2docker build`.
+`cli2docker build` builds a Docker image for an npm CLI package using a generated Dockerfile.
 
-## Requirements
+## Goals / Non-Goals
+
+**Goals:**
+- Build an image from an npm package and CLI entrypoint.
+- Allow basic configuration of base image, user, tag, and cache.
+
+**Non-Goals:**
+- Multi-arch builds.
+- Registry publishing/signing.
+- Arbitrary Dockerfile generation.
+
+## Entities
+
+- **Image**: Docker image name + tag.
+- **Package**: npm package name.
+- **Binary**: CLI entrypoint name.
+
+## Interfaces
+
+- Command: `cli2docker build`
+- Flags: `--package`, `--bin`, `--image`, `--tag`, `--base`, `--user`, `--no-user`, `--no-cache`
+
+## Events / Triggers
+
+- User runs `cli2docker build ...`
+
+## Behavior (White Box)
+
+- Generates a Dockerfile and runs `docker build`.
+- Default tag is `latest` if omitted.
+- `--no-user` omits `USER` from Dockerfile; `--no-cache` passes `--no-cache` to Docker.
+
+## Requirements (Test Cases)
 
 ### Requirement: Default image from package
 

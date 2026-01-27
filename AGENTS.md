@@ -324,3 +324,7 @@ These scripts are located in `scripts/` directory and don't participate in proje
 
 - when the user explicitly says to move to the next phase, write that phase's artifacts directly to files without previewing in chat. Report file paths and let the user request edits afterward.
 - the `phase-transition` skill is installed in `.codex/skills/phase-transition/` and auto-triggers on "переходим на фазу <X>" / "next phase".
+
+## OpenSpec Main Spec Format
+
+- Main specs in `openspec/specs/*` should include: Overview (black box), Goals/Non-Goals, Entities, Interfaces, Events/Triggers, Behavior (white box), then Requirements/Scenarios.
