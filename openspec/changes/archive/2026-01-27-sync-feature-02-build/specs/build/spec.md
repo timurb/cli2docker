@@ -1,8 +1,4 @@
-## Purpose
-
-Defines requirements for `cli2docker build`.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Default image from package
 
@@ -40,6 +36,8 @@ If `--image` or `--bin` is provided explicitly, the system SHALL use the explici
 - **WHEN** `--package` is `eslint` and `--image` is `acme/eslint` and `--bin` is `eslint-cli`
 - **THEN** image name is `acme/eslint`
 - **AND** binary name is `eslint-cli`
+
+## ADDED Requirements
 
 ### Requirement: Required docker executable
 
