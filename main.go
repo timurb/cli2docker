@@ -63,6 +63,14 @@ func newBuildCmd() *cobra.Command {
 			if err := ensureCommand("docker"); err != nil {
 				return err
 			}
+			if opts.Image == "" {
+				opts.Image = imageFromPackage(opts.Package)
+				fmt.Fprintf(os.Stderr, "warning: --image not set, using derived value %q\n", opts.Image)
+			}
+			if opts.Bin == "" {
+				opts.Bin = packageBaseName(opts.Package)
+				fmt.Fprintf(os.Stderr, "warning: --bin not set, using derived value %q\n", opts.Bin)
+			}
 			return buildWithOptions(opts)
 		},
 	}
@@ -75,9 +83,7 @@ func newBuildCmd() *cobra.Command {
 	flags.StringVar(&opts.User, "user", opts.User, "Runtime user")
 	flags.BoolVar(&opts.NoUser, "no-user", false, "Do not drop privileges")
 	flags.BoolVar(&opts.NoCache, "no-cache", false, "Disable build cache")
-	for _, name := range []string{"package", "bin", "image"} {
-		_ = cmd.MarkFlagRequired(name)
-	}
+	_ = cmd.MarkFlagRequired("package")
 	return cmd
 }
 
@@ -228,6 +234,25 @@ func buildImageRef(image string, tag string) string {
 		tag = "latest"
 	}
 	return image + ":" + tag
+}
+
+// packageBaseName returns the package name without scope.
+func packageBaseName(pkg string) string {
+	if strings.HasPrefix(pkg, "@") {
+		parts := strings.SplitN(pkg, "/", 2)
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+	return pkg
+}
+
+// imageFromPackage returns the image name derived from the package name.
+func imageFromPackage(pkg string) string {
+	if strings.HasPrefix(pkg, "@") {
+		return strings.TrimPrefix(pkg, "@")
+	}
+	return pkg
 }
 
 // writeDockerfile writes Dockerfile content.
