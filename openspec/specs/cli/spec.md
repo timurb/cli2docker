@@ -1,36 +1,12 @@
-## Overview (Black Box)
+## Purpose
 
-`cli2docker` is a CLI wrapper with `build` and `shim` subcommands and standard help/usage.
+Defines normative requirements for the `cli2docker` CLI surface.
 
-## Goals / Non-Goals
+## Related docs
 
-**Goals:**
-- Provide a root command and subcommands `build` and `shim`.
-- Parse flags and render help/usage consistently.
+- [feature](feature.md)
 
-**Non-Goals:**
-- Implement build/shim behavior (covered by their specs).
-
-## Entities
-
-- **CLI**: root command and subcommands.
-- **Flags**: command-line options for subcommands.
-
-## Interfaces
-
-- Commands: `cli2docker`, `cli2docker build`, `cli2docker shim`
-- Help: `--help`
-
-## Events / Triggers
-
-- User invokes any CLI command.
-
-## Behavior (White Box)
-
-- Uses `spf13/cobra` for flag parsing and help/usage rendering.
-- Invalid flags result in non-zero exit and stderr message.
-
-## Requirements (Test Cases)
+## Requirements
 
 ### Requirement: Root command
 

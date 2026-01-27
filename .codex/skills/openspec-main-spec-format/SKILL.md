@@ -8,26 +8,29 @@ metadata:
   version: "1.0"
 ---
 
-When creating or updating files under `openspec/specs/*/spec.md`, use this structure:
+When creating or updating capability docs under `openspec/specs/<capability>/`, use a split-file format:
 
-1) Overview
-    This section describes context in which the developed solution operates, its blackbox description and intent of its creation.
-    It is recommended to describe the following as paragraph parts or as subsections:
-    - Context
-    - Problems addressed
-    - Goals and intents
-2) Constraints
-3) Goals / Non-Goals (or In scope / Out of scope)
-4) Architecture
-    This section describes glass box description of the developed solution.
-    Depending on the application nature it can hold the following subsections (non exhaustive)
-    - Entities
-    - Interfaces (or Inputs and Outputs)
-    - Events / Triggers
-5) Additional sections (recommended but optional):
-    - Invariants
-    - Success criteria
-    - Usage orkflows
-6) Requirements (test cases with scenarios)
+1) `spec.md` (normative tests only)
+   - Purpose (1–3 sentences)
+   - Requirements/Scenarios (normative)
+   - Links to sibling docs (markdown links)
 
-Keep sections concise; requirements and scenarios remain the normative tests.
+2) `feature.md` (black + white box in one file)
+   - Overview / Context / Problems addressed
+   - Goals / Non-Goals (or In scope / Out of scope)
+   - Usage workflows / scenarios beyond tests
+   - Success criteria (if applicable)
+   - Architecture description
+   - Constraints
+   - Entities
+   - Interfaces (Inputs/Outputs)
+   - Invariants (if applicable)
+   - Events / Triggers
+   - Links to sibling docs (markdown links)
+
+Cross-links are recommended in all files:
+- Link to sibling docs within the same capability
+- Link across capabilities when concepts are shared
+Use markdown links (e.g., `[feature](feature.md)`), not backticked filenames.
+
+Keep `spec.md` lean; requirements and scenarios are the normative tests.

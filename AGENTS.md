@@ -327,4 +327,6 @@ These scripts are located in `scripts/` directory and don't participate in proje
 
 ## OpenSpec Main Spec Format
 
-- Main specs in `openspec/specs/*` should include: Overview (black box), Goals/Non-Goals, Entities, Interfaces, Events/Triggers, Behavior (white box), then Requirements/Scenarios.
+- Use split files per capability under `openspec/specs/<capability>/`:
+  - `spec.md`: Purpose + Requirements/Scenarios + links to sibling docs (markdown links).
+  - `feature.md`: Overview/Context, Goals/Non-Goals, usage workflows, success criteria, architecture, constraints, entities, interfaces, invariants, events/triggers, links (markdown links).
