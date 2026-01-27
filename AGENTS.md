@@ -79,7 +79,7 @@ When reasoning through problems, apply these principles:
 
 ### 2. Investigate the Codebase
 
-- **Check specs in `docs/` directory** — Architectural documentation and design decisions
+- **Check OpenSpec artifacts first** — `openspec/specs/` and any active change artifacts
 - Use Task tool for broader/multi-file exploration (preferred for context efficiency)
 - Explore relevant files and directories
 - Search for key functions, classes, variables
@@ -95,6 +95,7 @@ When reasoning through problems, apply these principles:
 
 ### 4. Plan the Solution (Collaborative)
 - **Step 4a: Select Profile.** Confirm if the target is **Prototype** (lean) or **Production** (robust).
+- If an OpenSpec change exists, use its proposal/specs/design/tasks as the plan; don't create a parallel plan.
 - Create clear, step-by-step plan using TodoWrite
 - **Step 4b: Define Signatures.** Propose types and function signatures (function signatures & types ONLY) if there are any changes. No code yet. If there are no changes in signatures and now new signatures go forward to the next step.
 - **Step 4c: Explicate Assumptions.** Before writing code, list implicit assumptions you are making about data types, error handling, and scope. Ask user to confirm/reject.
@@ -126,6 +127,7 @@ When reasoning through problems, apply these principles:
 - Test frequently after each change
 - Run lint and typecheck commands if available
 - Run existing tests
+- If an OpenSpec change exists, run the verify phase using the OpenSpec verify skill after tests
 - Verify all edge cases are handled
 - If you find yourself listing more than 3 edge cases for a single function (e.g., "empty string", "null", "negative number", "special chars"), STOP. Report this to the user: "This function signature attracts too many edge cases. Recommend simplifying the input type (e.g., ensure valid input at the boundary) to eliminate these checks."
 
@@ -145,7 +147,6 @@ When reasoning through problems, apply these principles:
 - When using bullets in responses, include an ID for each bullet so the user can refer to them.
 - Always use the project `venv` Python for commands and tests.
 - Tests must use defined behavior and avoid implicit paths; pass explicit paths/working dir (exception: tools installed inside the venv).
-- Record discussed decisions in [docs/99-project-status.md](docs/99-project-status.md) instantly as `[Pending]` first without asking me. Move to `[Done YYYY-MM-DD]` when accepted or to an ADR for major/revisitable decisions. Suggest `[Done]` changes yourself, ask me for confirmation of that.
 - When testing that a function produces YAML or JSON the tests must include the resulting YAML as a docstring or a fixture. The intent is to reduce cognitive load on developer.
 - CLI scripts must start with a shebang.
 - Add docstrings to all functions and methods.
