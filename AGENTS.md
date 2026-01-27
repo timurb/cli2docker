@@ -319,3 +319,8 @@ These scripts are located in `scripts/` directory and don't participate in proje
 8. **No Silent Failures**: Empty catch blocks are bugs
 9. **Be Direct**: "No" is a complete sentence. Disagree when you should.
 10. **Transformer Mandate**: Generate options, human decides. Don't make architectural choices autonomously.
+
+## Openspec Workflow Preferences
+
+- when the user explicitly says to move to the next phase, write that phase's artifacts directly to files without previewing in chat. Report file paths and let the user request edits afterward.
+- the `phase-transition` skill is installed in `.codex/skills/phase-transition/` and auto-triggers on "переходим на фазу <X>" / "next phase".
