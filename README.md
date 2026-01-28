@@ -17,11 +17,20 @@ Quickly package Node.js CLI tools into Docker images without hand-writing a Dock
 MVP implementation is available in Go.
 
 ## Repository layout
-- `specs/openspec.yaml` - product/spec description for the project.
+- `openspec/specs/openspec.yaml` - product/spec description for the project.
+- `openspec/specs/overview.md` - project overview and design decisions.
+- `openspec/specs/<capability>/feature.md` - capability overview/constraints (black+white box).
+- `openspec/specs/<capability>/spec.md` - normative requirements and scenarios.
 - `main.go` - Go CLI implementation.
 - `.gitignore` - common ignores for scripts and tooling.
 - `.editorconfig` - basic formatting rules.
 - `AGENTS.md` - guidance for future contributors/agents.
+
+## Docs
+- Overview: `openspec/specs/overview.md`
+- CLI: `openspec/specs/cli/feature.md` / `openspec/specs/cli/spec.md`
+- Build: `openspec/specs/build/feature.md` / `openspec/specs/build/spec.md`
+- Shim: `openspec/specs/shim/feature.md` / `openspec/specs/shim/spec.md`
 
 ## Requirements
 - Docker installed and running.
