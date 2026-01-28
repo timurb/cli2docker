@@ -330,3 +330,4 @@ These scripts are located in `scripts/` directory and don't participate in proje
 - Use split files per capability under `openspec/specs/<capability>/`:
   - `spec.md`: Purpose + Requirements/Scenarios + links to sibling docs (markdown links).
   - `feature.md`: Overview/Context, Goals/Non-Goals, usage workflows, success criteria, architecture, constraints, entities, interfaces, invariants, events/triggers, links (markdown links).
+- Do not modify `openspec/specs/*` until a change is synced; keep edits in `openspec/changes/<name>/specs/*` first.
