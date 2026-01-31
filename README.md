@@ -55,6 +55,12 @@ Build the same package using Bun:
 go run . build --package eslint --package-manager bun --image acme/eslint-bun
 ```
 
+Print the generated Dockerfile without building the image:
+
+```bash
+go run . build --package eslint --print-dockerfile > Dockerfile
+```
+
 Run it directly with Docker:
 
 ```bash
@@ -73,6 +79,7 @@ chmod +x ~/.local/bin/eslint
 - By default the image drops to the `node` user for npm builds and the `bun` user for Bun builds. Use `--no-user` for images without that user.
 - `--image-prefix` defaults to `cli/`.
 - If `--image` is omitted, it is derived from `--package`
+- `--print-dockerfile` writes only the Dockerfile to stdout; warnings remain on stderr.
 - Shim scripts are printed to stdout. Redirect to a file on your `PATH`.
 
 ## Provenance

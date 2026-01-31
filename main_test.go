@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -137,6 +138,76 @@ func TestBuildInvalidPackageManager(t *testing.T) {
 	cmd.SetArgs([]string{"--package", "eslint", "--package-manager", "pnpm"})
 	if _, err := captureStderr(t, cmd.Execute); err == nil || !strings.Contains(err.Error(), "invalid package manager") {
 		t.Fatalf("expected invalid package manager error, got %v", err)
+	}
+}
+
+func TestPrintDockerfileMode(t *testing.T) {
+	oldEnsure := ensureCommandFn
+	oldBuild := buildWithOptionsFn
+	t.Cleanup(func() {
+		ensureCommandFn = oldEnsure
+		buildWithOptionsFn = oldBuild
+	})
+
+	ensureCommandFn = func(string) error {
+		t.Fatal("docker check should not run in print-only mode")
+		return nil
+	}
+	buildWithOptionsFn = func(buildFlags) error {
+		t.Fatal("build should not be invoked in print-only mode")
+		return nil
+	}
+
+	cmd := newBuildCmd()
+	cmd.SetArgs([]string{"--package", "eslint", "--bin", "eslint", "--image", "acme/eslint", "--print-dockerfile"})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	_, err := captureStderr(t, cmd.Execute)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "FROM "+defaultNPMBase) {
+		t.Fatalf("expected Dockerfile to include base image, got %q", output)
+	}
+	if !strings.Contains(output, "RUN npm install -g eslint") {
+		t.Fatalf("expected Dockerfile to include npm install, got %q", output)
+	}
+	if !strings.Contains(output, "ENTRYPOINT [\"eslint\"]") {
+		t.Fatalf("expected Dockerfile to include entrypoint, got %q", output)
+	}
+}
+
+func TestPrintDockerfileWarningsToStderr(t *testing.T) {
+	oldEnsure := ensureCommandFn
+	oldBuild := buildWithOptionsFn
+	t.Cleanup(func() {
+		ensureCommandFn = oldEnsure
+		buildWithOptionsFn = oldBuild
+	})
+
+	ensureCommandFn = func(string) error {
+		t.Fatal("docker check should not run in print-only mode")
+		return nil
+	}
+	buildWithOptionsFn = func(buildFlags) error {
+		t.Fatal("build should not be invoked in print-only mode")
+		return nil
+	}
+
+	cmd := newBuildCmd()
+	cmd.SetArgs([]string{"--package", "eslint", "--print-dockerfile"})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	stderr, err := captureStderr(t, cmd.Execute)
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(stderr, "warning: --image") || !strings.Contains(stderr, "warning: --bin") {
+		t.Fatalf("expected derivation warnings on stderr, got %q", stderr)
+	}
+	if strings.Contains(stdout.String(), "warning:") {
+		t.Fatalf("expected stdout to contain only Dockerfile content, got %q", stdout.String())
 	}
 }
 

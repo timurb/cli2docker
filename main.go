@@ -23,6 +23,7 @@ type buildFlags struct {
 	NoUser         bool
 	NoCache        bool
 	PackageManager string
+	PrintDockerfile bool
 }
 
 type shimFlags struct {
@@ -102,19 +103,24 @@ func newBuildCmd() *cobra.Command {
 	flags.BoolVar(&opts.NoUser, "no-user", false, "Do not drop privileges")
 	flags.BoolVar(&opts.NoCache, "no-cache", false, "Disable build cache")
 	flags.StringVar(&opts.PackageManager, "package-manager", opts.PackageManager, "Package manager to install package with (npm|bun)")
+	flags.BoolVar(&opts.PrintDockerfile, "print-dockerfile", false, "Print generated Dockerfile to stdout and exit")
 	_ = cmd.MarkFlagRequired("package")
 	return cmd
 }
 
 func runBuild(cmd *cobra.Command, opts *buildFlags) error {
-	if err := ensureCommandFn("docker"); err != nil {
-		return err
-	}
 	if err := applyPackageManagerDefaults(cmd, opts); err != nil {
 		return err
 	}
 	applyImageDefaults(opts)
 	applyBinDefaults(opts)
+	if opts.PrintDockerfile {
+		_, err := fmt.Fprint(cmd.OutOrStdout(), renderDockerfile(*opts))
+		return err
+	}
+	if err := ensureCommandFn("docker"); err != nil {
+		return err
+	}
 	return buildWithOptionsFn(*opts)
 }
 
@@ -432,8 +438,7 @@ func buildShimScript(image string, execLine string, labels map[string]string) st
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// writeDockerfile writes Dockerfile content.
-func writeDockerfile(path string, opts buildFlags) error {
+func renderDockerfile(opts buildFlags) string {
 	lines := []string{
 		"FROM " + opts.Base,
 	}
@@ -454,8 +459,12 @@ func writeDockerfile(path string, opts buildFlags) error {
 		lines = append(lines, "USER "+opts.User)
 	}
 	lines = append(lines, "ENTRYPOINT [\""+opts.Bin+"\"]")
-	content := strings.Join(lines, "\n") + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// writeDockerfile writes Dockerfile content.
+func writeDockerfile(path string, opts buildFlags) error {
+	return os.WriteFile(path, []byte(renderDockerfile(opts)), 0o644)
 }
 
 // runDockerBuild executes docker build.
