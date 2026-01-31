@@ -49,6 +49,12 @@ Derive the image name from the package with a prefix:
 go run . build --package eslint --image-prefix cli/
 ```
 
+Build the same package using Bun:
+
+```bash
+go run . build --package eslint --package-manager bun --image acme/eslint-bun
+```
+
 Run it directly with Docker:
 
 ```bash
@@ -63,8 +69,8 @@ chmod +x ~/.local/bin/eslint
 ```
 
 ## Notes
-- The default base image is `node:20-alpine`. Use `--base` to override it.
-- By default the image drops to the `node` user for runtime. Use `--no-user` for images without that user.
+- The default base image is `node:20-alpine` for npm builds and `oven/bun:1` for Bun builds. Use `--base` to override it.
+- By default the image drops to the `node` user for npm builds and the `bun` user for Bun builds. Use `--no-user` for images without that user.
 - `--image-prefix` defaults to `cli/`.
 - If `--image` is omitted, it is derived from `--package`
 - Shim scripts are printed to stdout. Redirect to a file on your `PATH`.

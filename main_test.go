@@ -74,8 +74,69 @@ func TestBuildDefaultsWarnings(t *testing.T) {
 	if got.Bin != "eslint" {
 		t.Fatalf("expected derived bin %q, got %q", "eslint", got.Bin)
 	}
+	if got.PackageManager != packageManagerNPM {
+		t.Fatalf("expected package manager %q, got %q", packageManagerNPM, got.PackageManager)
+	}
+	if got.Base != defaultNPMBase {
+		t.Fatalf("expected base %q, got %q", defaultNPMBase, got.Base)
+	}
+	if got.User != defaultNPMUser {
+		t.Fatalf("expected user %q, got %q", defaultNPMUser, got.User)
+	}
 	if !strings.Contains(stderr, "--image") || !strings.Contains(stderr, "--bin") {
 		t.Fatalf("expected warnings for both image and bin derivation, got %q", stderr)
+	}
+}
+
+func TestBuildDefaultsForBun(t *testing.T) {
+	oldEnsure := ensureCommandFn
+	oldBuild := buildWithOptionsFn
+	t.Cleanup(func() {
+		ensureCommandFn = oldEnsure
+		buildWithOptionsFn = oldBuild
+	})
+
+	ensureCommandFn = func(string) error { return nil }
+	var got buildFlags
+	buildWithOptionsFn = func(opts buildFlags) error {
+		got = opts
+		return nil
+	}
+
+	cmd := newBuildCmd()
+	cmd.SetArgs([]string{"--package", "eslint", "--package-manager", "bun"})
+	if _, err := captureStderr(t, cmd.Execute); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if got.PackageManager != packageManagerBun {
+		t.Fatalf("expected package manager %q, got %q", packageManagerBun, got.PackageManager)
+	}
+	if got.Base != defaultBunBase {
+		t.Fatalf("expected base %q, got %q", defaultBunBase, got.Base)
+	}
+	if got.User != defaultBunUser {
+		t.Fatalf("expected user %q, got %q", defaultBunUser, got.User)
+	}
+}
+
+func TestBuildInvalidPackageManager(t *testing.T) {
+	oldEnsure := ensureCommandFn
+	oldBuild := buildWithOptionsFn
+	t.Cleanup(func() {
+		ensureCommandFn = oldEnsure
+		buildWithOptionsFn = oldBuild
+	})
+
+	ensureCommandFn = func(string) error { return nil }
+	buildWithOptionsFn = func(buildFlags) error {
+		t.Fatal("build should not be invoked for invalid package manager")
+		return nil
+	}
+
+	cmd := newBuildCmd()
+	cmd.SetArgs([]string{"--package", "eslint", "--package-manager", "pnpm"})
+	if _, err := captureStderr(t, cmd.Execute); err == nil || !strings.Contains(err.Error(), "invalid package manager") {
+		t.Fatalf("expected invalid package manager error, got %v", err)
 	}
 }
 
@@ -232,10 +293,11 @@ func TestWriteDockerfileIncludesOriginLabels(t *testing.T) {
 	tmpDir := t.TempDir()
 	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
 	opts := buildFlags{
-		Package: "eslint",
-		Bin:     "eslint",
-		Base:    "node:20-alpine",
-		User:    "node",
+		Package:        "eslint",
+		Bin:            "eslint",
+		Base:           defaultNPMBase,
+		User:           defaultNPMUser,
+		PackageManager: packageManagerNPM,
 	}
 	if err := writeDockerfile(dockerfilePath, opts); err != nil {
 		t.Fatalf("writeDockerfile: %v", err)
@@ -262,5 +324,63 @@ func TestWriteDockerfileIncludesOriginLabels(t *testing.T) {
 	}
 	if strings.Contains(labelLine, "io.cli2docker.package-version") {
 		t.Fatalf("did not expect package-version label in %q", labelLine)
+	}
+}
+
+func TestWriteDockerfileUsesNpmInstall(t *testing.T) {
+	tmpDir := t.TempDir()
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	opts := buildFlags{
+		Package:        "eslint",
+		Bin:            "eslint",
+		Base:           defaultNPMBase,
+		User:           defaultNPMUser,
+		PackageManager: packageManagerNPM,
+	}
+	if err := writeDockerfile(dockerfilePath, opts); err != nil {
+		t.Fatalf("writeDockerfile: %v", err)
+	}
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("read dockerfile: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "npm install -g") {
+		t.Fatalf("expected npm install line, got %q", text)
+	}
+	if !strings.Contains(text, "NPM_CONFIG_FUND=false") {
+		t.Fatalf("expected npm env config, got %q", text)
+	}
+	if strings.Contains(text, "bun add -g") {
+		t.Fatalf("did not expect bun install line, got %q", text)
+	}
+}
+
+func TestWriteDockerfileUsesBunInstall(t *testing.T) {
+	tmpDir := t.TempDir()
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	opts := buildFlags{
+		Package:        "eslint",
+		Bin:            "eslint",
+		Base:           defaultBunBase,
+		User:           defaultBunUser,
+		PackageManager: packageManagerBun,
+	}
+	if err := writeDockerfile(dockerfilePath, opts); err != nil {
+		t.Fatalf("writeDockerfile: %v", err)
+	}
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("read dockerfile: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "bun add -g") {
+		t.Fatalf("expected bun install line, got %q", text)
+	}
+	if strings.Contains(text, "NPM_CONFIG_FUND=false") {
+		t.Fatalf("did not expect npm env config, got %q", text)
+	}
+	if strings.Contains(text, "npm install -g") {
+		t.Fatalf("did not expect npm install line, got %q", text)
 	}
 }

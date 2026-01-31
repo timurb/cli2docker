@@ -13,15 +13,16 @@ import (
 )
 
 type buildFlags struct {
-	Package     string
-	Bin         string
-	Image       string
-	ImagePrefix string
-	Tag         string
-	Base        string
-	User        string
-	NoUser      bool
-	NoCache     bool
+	Package        string
+	Bin            string
+	Image          string
+	ImagePrefix    string
+	Tag            string
+	Base           string
+	User           string
+	NoUser         bool
+	NoCache        bool
+	PackageManager string
 }
 
 type shimFlags struct {
@@ -34,6 +35,18 @@ type shimFlags struct {
 
 const defaultWorkDir = "/work"
 const defaultContainerHome = "/home/node"
+
+const (
+	defaultNPMBase = "node:20-alpine"
+	defaultNPMUser = "node"
+	defaultBunBase = "oven/bun:1"
+	defaultBunUser = "bun"
+)
+
+const (
+	packageManagerNPM = "npm"
+	packageManagerBun = "bun"
+)
 
 const labelPackage = "io.cli2docker.package"
 const labelPackageVersion = "io.cli2docker.package-version"
@@ -66,32 +79,20 @@ func newRootCmd() *cobra.Command {
 // newBuildCmd constructs the build command.
 func newBuildCmd() *cobra.Command {
 	opts := buildFlags{
-		Base:        "node:20-alpine",
-		User:        "node",
-		ImagePrefix: "cli/",
+		Base:           defaultNPMBase,
+		User:           defaultNPMUser,
+		ImagePrefix:    "cli/",
+		PackageManager: packageManagerNPM,
 	}
 	cmd := &cobra.Command{
 		Use:   "build",
-		Short: "Build a Docker image for an npm CLI tool",
+		Short: "Build a Docker image for a JS CLI tool",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureCommandFn("docker"); err != nil {
-				return err
-			}
-			if opts.Image == "" {
-				opts.Image = imageFromPackage(opts.Package, opts.ImagePrefix)
-				fmt.Fprintf(os.Stderr, "warning: --image not set, using derived value %q\n", opts.Image)
-			} else if opts.ImagePrefix != "" {
-				fmt.Fprintln(os.Stderr, "warning: --image-prefix ignored because --image was set explicitly")
-			}
-			if opts.Bin == "" {
-				opts.Bin = packageBaseName(opts.Package)
-				fmt.Fprintf(os.Stderr, "warning: --bin not set, using derived value %q\n", opts.Bin)
-			}
-			return buildWithOptionsFn(opts)
+			return runBuild(cmd, &opts)
 		},
 	}
 	flags := cmd.Flags()
-	flags.StringVar(&opts.Package, "package", "", "npm package name")
+	flags.StringVar(&opts.Package, "package", "", "Package name to install")
 	flags.StringVar(&opts.Bin, "bin", "", "CLI entrypoint")
 	flags.StringVar(&opts.Image, "image", "", "Docker image name")
 	flags.StringVar(&opts.ImagePrefix, "image-prefix", opts.ImagePrefix, "Prefix for derived image name")
@@ -100,8 +101,63 @@ func newBuildCmd() *cobra.Command {
 	flags.StringVar(&opts.User, "user", opts.User, "Runtime user")
 	flags.BoolVar(&opts.NoUser, "no-user", false, "Do not drop privileges")
 	flags.BoolVar(&opts.NoCache, "no-cache", false, "Disable build cache")
+	flags.StringVar(&opts.PackageManager, "package-manager", opts.PackageManager, "Package manager to install package with (npm|bun)")
 	_ = cmd.MarkFlagRequired("package")
 	return cmd
+}
+
+func runBuild(cmd *cobra.Command, opts *buildFlags) error {
+	if err := ensureCommandFn("docker"); err != nil {
+		return err
+	}
+	if err := applyPackageManagerDefaults(cmd, opts); err != nil {
+		return err
+	}
+	applyImageDefaults(opts)
+	applyBinDefaults(opts)
+	return buildWithOptionsFn(*opts)
+}
+
+func applyPackageManagerDefaults(cmd *cobra.Command, opts *buildFlags) error {
+	manager, baseDefault, userDefault, err := resolvePackageManagerDefaults(opts.PackageManager)
+	if err != nil {
+		return err
+	}
+	opts.PackageManager = manager
+	flags := cmd.Flags()
+	if !flags.Changed("base") {
+		opts.Base = baseDefault
+	}
+	if !flags.Changed("user") {
+		opts.User = userDefault
+	}
+	return nil
+}
+
+func resolvePackageManagerDefaults(value string) (string, string, string, error) {
+	if value == "" || value == packageManagerNPM {
+		return packageManagerNPM, defaultNPMBase, defaultNPMUser, nil
+	}
+	if value == packageManagerBun {
+		return packageManagerBun, defaultBunBase, defaultBunUser, nil
+	}
+	return "", "", "", fmt.Errorf("invalid package manager: %s", value)
+}
+
+func applyImageDefaults(opts *buildFlags) {
+	if opts.Image == "" {
+		opts.Image = imageFromPackage(opts.Package, opts.ImagePrefix)
+		fmt.Fprintf(os.Stderr, "warning: --image not set, using derived value %q\n", opts.Image)
+	} else if opts.ImagePrefix != "" {
+		fmt.Fprintln(os.Stderr, "warning: --image-prefix ignored because --image was set explicitly")
+	}
+}
+
+func applyBinDefaults(opts *buildFlags) {
+	if opts.Bin == "" {
+		opts.Bin = packageBaseName(opts.Package)
+		fmt.Fprintf(os.Stderr, "warning: --bin not set, using derived value %q\n", opts.Bin)
+	}
 }
 
 // newShimCmd constructs the shim command.
@@ -380,10 +436,16 @@ func buildShimScript(image string, execLine string, labels map[string]string) st
 func writeDockerfile(path string, opts buildFlags) error {
 	lines := []string{
 		"FROM " + opts.Base,
-		"ENV NODE_ENV=production \\",
-		"    NPM_CONFIG_FUND=false \\",
-		"    NPM_CONFIG_AUDIT=false",
-		"RUN npm install -g " + opts.Package,
+	}
+	if opts.PackageManager == packageManagerBun {
+		lines = append(lines, "RUN bun add -g "+opts.Package)
+	} else {
+		lines = append(lines,
+			"ENV NODE_ENV=production \\",
+			"    NPM_CONFIG_FUND=false \\",
+			"    NPM_CONFIG_AUDIT=false",
+			"RUN npm install -g "+opts.Package,
+		)
 	}
 	if labelPairs := originLabelPairs(opts.Package, opts.Bin); len(labelPairs) > 0 {
 		lines = append(lines, "LABEL "+strings.Join(labelPairs, " "))
