@@ -43,6 +43,12 @@ Build an image for a Node.js CLI and tag it:
 go run . build --package eslint --bin eslint --image acme/eslint
 ```
 
+Derive the image name from the package with a prefix:
+
+```bash
+go run . build --package eslint --image-prefix cli/
+```
+
 Run it directly with Docker:
 
 ```bash
@@ -59,7 +65,22 @@ chmod +x ~/.local/bin/eslint
 ## Notes
 - The default base image is `node:20-alpine`. Use `--base` to override it.
 - By default the image drops to the `node` user for runtime. Use `--no-user` for images without that user.
+- `--image-prefix` defaults to `cli/`.
+- If `--image` is omitted, it is derived from `--package`
 - Shim scripts are printed to stdout. Redirect to a file on your `PATH`.
+
+## Provenance
+Built images include labels for origin metadata:
+`io.cli2docker.package`, `io.cli2docker.package-version` (only when explicit), and `io.cli2docker.bin`.
+Inspect labels with:
+`docker image inspect --format '{{json .Config.Labels}}' <image>`
+
+Shim output includes comment lines when the labels are present:
+```
+# io.cli2docker.package=eslint
+# io.cli2docker.package-version=1.2.3
+# io.cli2docker.bin=eslint
+```
 
 ## Build
 

@@ -1,24 +1,27 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 type buildFlags struct {
-	Package string
-	Bin     string
-	Image   string
-	Tag     string
-	Base    string
-	User    string
-	NoUser  bool
-	NoCache bool
+	Package     string
+	Bin         string
+	Image       string
+	ImagePrefix string
+	Tag         string
+	Base        string
+	User        string
+	NoUser      bool
+	NoCache     bool
 }
 
 type shimFlags struct {
@@ -31,6 +34,16 @@ type shimFlags struct {
 
 const defaultWorkDir = "/work"
 const defaultContainerHome = "/home/node"
+
+const labelPackage = "io.cli2docker.package"
+const labelPackageVersion = "io.cli2docker.package-version"
+const labelBin = "io.cli2docker.bin"
+
+// allow tests to stub side-effectful operations.
+var (
+	ensureCommandFn    = ensureCommand
+	buildWithOptionsFn = buildWithOptions
+)
 
 // main is the program entrypoint.
 func main() {
@@ -53,31 +66,35 @@ func newRootCmd() *cobra.Command {
 // newBuildCmd constructs the build command.
 func newBuildCmd() *cobra.Command {
 	opts := buildFlags{
-		Base: "node:20-alpine",
-		User: "node",
+		Base:        "node:20-alpine",
+		User:        "node",
+		ImagePrefix: "cli/",
 	}
 	cmd := &cobra.Command{
 		Use:   "build",
 		Short: "Build a Docker image for an npm CLI tool",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureCommand("docker"); err != nil {
+			if err := ensureCommandFn("docker"); err != nil {
 				return err
 			}
 			if opts.Image == "" {
-				opts.Image = imageFromPackage(opts.Package)
+				opts.Image = imageFromPackage(opts.Package, opts.ImagePrefix)
 				fmt.Fprintf(os.Stderr, "warning: --image not set, using derived value %q\n", opts.Image)
+			} else if opts.ImagePrefix != "" {
+				fmt.Fprintln(os.Stderr, "warning: --image-prefix ignored because --image was set explicitly")
 			}
 			if opts.Bin == "" {
 				opts.Bin = packageBaseName(opts.Package)
 				fmt.Fprintf(os.Stderr, "warning: --bin not set, using derived value %q\n", opts.Bin)
 			}
-			return buildWithOptions(opts)
+			return buildWithOptionsFn(opts)
 		},
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Package, "package", "", "npm package name")
 	flags.StringVar(&opts.Bin, "bin", "", "CLI entrypoint")
 	flags.StringVar(&opts.Image, "image", "", "Docker image name")
+	flags.StringVar(&opts.ImagePrefix, "image-prefix", opts.ImagePrefix, "Prefix for derived image name")
 	flags.StringVar(&opts.Tag, "tag", "", "Docker tag")
 	flags.StringVar(&opts.Base, "base", opts.Base, "Base image")
 	flags.StringVar(&opts.User, "user", opts.User, "Runtime user")
@@ -97,25 +114,16 @@ func newShimCmd() *cobra.Command {
 			if err := ensureCommand("docker"); err != nil {
 				return err
 			}
+			labels, err := readImageLabels(opts.Image)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: unable to read image labels: %v\n", err)
+			}
 			execLine, err := buildShimExecLine(opts)
 			if err != nil {
 				return err
 			}
-			lines := []string{
-				"#!/usr/bin/env sh",
-				"set -e",
-				"",
-				fmt.Sprintf("image_ref=%q", opts.Image),
-				"",
-				"if [ -t 0 ]; then",
-				"  tty_flags=\"-it\"",
-				"else",
-				"  tty_flags=\"\"",
-				"fi",
-				"",
-				execLine,
-			}
-			fmt.Fprint(cmd.OutOrStdout(), strings.Join(lines, "\n")+"\n")
+			script := buildShimScript(opts.Image, execLine, labels)
+			fmt.Fprint(cmd.OutOrStdout(), script)
 			return nil
 		},
 	}
@@ -236,8 +244,17 @@ func buildImageRef(image string, tag string) string {
 	return image + ":" + tag
 }
 
+func stripPackageVersion(pkg string) string {
+	idx := strings.LastIndex(pkg, "@")
+	if idx <= 0 {
+		return pkg
+	}
+	return pkg[:idx]
+}
+
 // packageBaseName returns the package name without scope.
 func packageBaseName(pkg string) string {
+	pkg = stripPackageVersion(pkg)
 	if strings.HasPrefix(pkg, "@") {
 		parts := strings.SplitN(pkg, "/", 2)
 		if len(parts) == 2 {
@@ -247,12 +264,116 @@ func packageBaseName(pkg string) string {
 	return pkg
 }
 
-// imageFromPackage returns the image name derived from the package name.
-func imageFromPackage(pkg string) string {
+// packageNameAndVersion returns the package name and explicit version (if present).
+func packageNameAndVersion(pkg string) (string, string) {
 	if strings.HasPrefix(pkg, "@") {
-		return strings.TrimPrefix(pkg, "@")
+		at := strings.LastIndex(pkg, "@")
+		slash := strings.Index(pkg, "/")
+		if slash != -1 && at > slash {
+			version := pkg[at+1:]
+			if version != "" {
+				return pkg[:at], version
+			}
+		}
+		return pkg, ""
 	}
-	return pkg
+	at := strings.LastIndex(pkg, "@")
+	if at > 0 {
+		version := pkg[at+1:]
+		if version != "" {
+			return pkg[:at], version
+		}
+	}
+	return pkg, ""
+}
+
+// imageFromPackage returns the image name derived from the package name.
+func imageFromPackage(pkg string, prefix string) string {
+	pkg = stripPackageVersion(pkg)
+	derived := pkg
+	if strings.HasPrefix(pkg, "@") {
+		derived = strings.TrimPrefix(pkg, "@")
+	}
+	if prefix == "" {
+		return derived
+	}
+	return prefix + derived
+}
+
+// originLabelPairs builds docker label pairs for package metadata.
+func originLabelPairs(pkgSpec string, bin string) []string {
+	if strings.TrimSpace(pkgSpec) == "" {
+		return nil
+	}
+	pkgName, pkgVersion := packageNameAndVersion(pkgSpec)
+	pairs := []string{
+		fmt.Sprintf("%s=%s", labelPackage, strconv.Quote(pkgName)),
+	}
+	if pkgVersion != "" {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", labelPackageVersion, strconv.Quote(pkgVersion)))
+	}
+	pairs = append(pairs, fmt.Sprintf("%s=%s", labelBin, strconv.Quote(bin)))
+	return pairs
+}
+
+// readImageLabels loads image labels via docker inspect.
+func readImageLabels(image string) (map[string]string, error) {
+	cmd := exec.Command("docker", "image", "inspect", "--format", "{{json .Config.Labels}}", image)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("inspect image labels: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	raw := strings.TrimSpace(string(output))
+	if raw == "" || raw == "null" {
+		return map[string]string{}, nil
+	}
+	labels := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &labels); err != nil {
+		return nil, err
+	}
+	return labels, nil
+}
+
+// originCommentLines formats provenance comments for the shim.
+func originCommentLines(labels map[string]string) []string {
+	if len(labels) == 0 {
+		return nil
+	}
+	lines := []string{}
+	if value, ok := labels[labelPackage]; ok {
+		lines = append(lines, "# "+labelPackage+"="+value)
+	}
+	if value, ok := labels[labelPackageVersion]; ok {
+		lines = append(lines, "# "+labelPackageVersion+"="+value)
+	}
+	if value, ok := labels[labelBin]; ok {
+		lines = append(lines, "# "+labelBin+"="+value)
+	}
+	return lines
+}
+
+func buildShimScript(image string, execLine string, labels map[string]string) string {
+	lines := []string{
+		"#!/usr/bin/env sh",
+		"set -e",
+		"",
+	}
+	if commentLines := originCommentLines(labels); len(commentLines) > 0 {
+		lines = append(lines, commentLines...)
+		lines = append(lines, "")
+	}
+	lines = append(lines,
+		fmt.Sprintf("image_ref=%q", image),
+		"",
+		"if [ -t 0 ]; then",
+		"  tty_flags=\"-it\"",
+		"else",
+		"  tty_flags=\"\"",
+		"fi",
+		"",
+		execLine,
+	)
+	return strings.Join(lines, "\n") + "\n"
 }
 
 // writeDockerfile writes Dockerfile content.
@@ -263,6 +384,9 @@ func writeDockerfile(path string, opts buildFlags) error {
 		"    NPM_CONFIG_FUND=false \\",
 		"    NPM_CONFIG_AUDIT=false",
 		"RUN npm install -g " + opts.Package,
+	}
+	if labelPairs := originLabelPairs(opts.Package, opts.Bin); len(labelPairs) > 0 {
+		lines = append(lines, "LABEL "+strings.Join(labelPairs, " "))
 	}
 	if !opts.NoUser {
 		lines = append(lines, "USER "+opts.User)
