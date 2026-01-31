@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -24,14 +25,18 @@ type buildFlags struct {
 	NoCache        bool
 	PackageManager string
 	PrintDockerfile bool
+	BuildTimestamp string
 }
 
 type shimFlags struct {
-	Image       string
-	Name        string
-	MountCwd    bool
-	MountHome   string
-	MountHomeRW bool
+	Image           string
+	Name            string
+	MountCwd        bool
+	MountHome       string
+	MountHomeRW     bool
+	NoDropCaps      bool
+	AllowNewPrivileges bool
+	NoReadOnly      bool
 }
 
 const defaultWorkDir = "/work"
@@ -52,11 +57,14 @@ const (
 const labelPackage = "io.cli2docker.package"
 const labelPackageVersion = "io.cli2docker.package-version"
 const labelBin = "io.cli2docker.bin"
+const labelBuildTimestamp = "io.cli2docker.build-timestamp"
+const githubPackagePrefix = "github:"
 
 // allow tests to stub side-effectful operations.
 var (
 	ensureCommandFn    = ensureCommand
 	buildWithOptionsFn = buildWithOptions
+	readImageLabelsFn  = readImageLabels
 )
 
 // main is the program entrypoint.
@@ -109,11 +117,18 @@ func newBuildCmd() *cobra.Command {
 }
 
 func runBuild(cmd *cobra.Command, opts *buildFlags) error {
+	if opts.BuildTimestamp == "" {
+		opts.BuildTimestamp = time.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	}
 	if err := applyPackageManagerDefaults(cmd, opts); err != nil {
 		return err
 	}
-	applyImageDefaults(opts)
-	applyBinDefaults(opts)
+	if err := applyImageDefaults(opts); err != nil {
+		return err
+	}
+	if err := applyBinDefaults(opts); err != nil {
+		return err
+	}
 	if opts.PrintDockerfile {
 		_, err := fmt.Fprint(cmd.OutOrStdout(), renderDockerfile(*opts))
 		return err
@@ -150,20 +165,30 @@ func resolvePackageManagerDefaults(value string) (string, string, string, error)
 	return "", "", "", fmt.Errorf("invalid package manager: %s", value)
 }
 
-func applyImageDefaults(opts *buildFlags) {
+func applyImageDefaults(opts *buildFlags) error {
 	if opts.Image == "" {
-		opts.Image = imageFromPackage(opts.Package, opts.ImagePrefix)
+		derived, err := imageFromPackage(opts.Package, opts.ImagePrefix)
+		if err != nil {
+			return err
+		}
+		opts.Image = derived
 		fmt.Fprintf(os.Stderr, "warning: --image not set, using derived value %q\n", opts.Image)
 	} else if opts.ImagePrefix != "" {
 		fmt.Fprintln(os.Stderr, "warning: --image-prefix ignored because --image was set explicitly")
 	}
+	return nil
 }
 
-func applyBinDefaults(opts *buildFlags) {
+func applyBinDefaults(opts *buildFlags) error {
 	if opts.Bin == "" {
-		opts.Bin = packageBaseName(opts.Package)
+		derived, err := packageBaseName(opts.Package)
+		if err != nil {
+			return err
+		}
+		opts.Bin = derived
 		fmt.Fprintf(os.Stderr, "warning: --bin not set, using derived value %q\n", opts.Bin)
 	}
+	return nil
 }
 
 // newShimCmd constructs the shim command.
@@ -172,11 +197,14 @@ func newShimCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shim",
 		Short: "Print a shim script to stdout",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := ensureCommand("docker"); err != nil {
+	RunE: func(cmd *cobra.Command, args []string) error {
+			if err := ensureCommandFn("docker"); err != nil {
 				return err
 			}
-			labels, err := readImageLabels(opts.Image)
+			if !opts.NoReadOnly {
+				fmt.Fprintln(cmd.ErrOrStderr(), "warning: read-only mode is experimental; disable with --no-read-only")
+			}
+			labels, err := readImageLabelsFn(opts.Image)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: unable to read image labels: %v\n", err)
 			}
@@ -195,6 +223,9 @@ func newShimCmd() *cobra.Command {
 	flags.BoolVar(&opts.MountCwd, "mount-cwd", false, "Mount current directory into the container")
 	flags.StringVar(&opts.MountHome, "mount-home", "", "Mount a directory from your home into the container home (read-only)")
 	flags.BoolVar(&opts.MountHomeRW, "mount-home-rw", false, "Mount the home directory path read-write")
+	flags.BoolVar(&opts.NoDropCaps, "no-drop-caps", false, "Do not drop Linux capabilities")
+	flags.BoolVar(&opts.AllowNewPrivileges, "allow-new-privileges", false, "Allow new privileges in the container")
+	flags.BoolVar(&opts.NoReadOnly, "no-read-only", false, "Disable read-only root filesystem (experimental default)")
 	_ = cmd.MarkFlagRequired("image")
 	return cmd
 }
@@ -202,6 +233,15 @@ func newShimCmd() *cobra.Command {
 // buildShimExecLine builds the docker run command for the shim.
 func buildShimExecLine(opts shimFlags) (string, error) {
 	args := []string{"exec docker run --rm ${tty_flags}"}
+	if !opts.NoDropCaps {
+		args = append(args, "--cap-drop=ALL")
+	}
+	if !opts.AllowNewPrivileges {
+		args = append(args, "--security-opt=no-new-privileges")
+	}
+	if !opts.NoReadOnly {
+		args = append(args, "--read-only")
+	}
 	if opts.MountCwd {
 		args = append(args, fmt.Sprintf("-v \"${PWD}:%s\" -w %s", defaultWorkDir, defaultWorkDir))
 	}
@@ -314,20 +354,87 @@ func stripPackageVersion(pkg string) string {
 	return pkg[:idx]
 }
 
+type githubSpec struct {
+	owner string
+	repo  string
+	ref   string
+}
+
+func invalidGithubSpec(pkg string) error {
+	return fmt.Errorf("invalid github package spec: %s", pkg)
+}
+
+func parseGithubShorthand(pkg string) (githubSpec, bool, error) {
+	if !strings.HasPrefix(pkg, githubPackagePrefix) {
+		return githubSpec{}, false, nil
+	}
+	remainder := strings.TrimPrefix(pkg, githubPackagePrefix)
+	if remainder == "" {
+		return githubSpec{}, true, invalidGithubSpec(pkg)
+	}
+	base, ref, err := splitGithubRef(remainder)
+	if err != nil {
+		return githubSpec{}, true, invalidGithubSpec(pkg)
+	}
+	owner, repo, err := splitGithubOwnerRepo(base)
+	if err != nil || strings.HasSuffix(repo, ".git") {
+		return githubSpec{}, true, invalidGithubSpec(pkg)
+	}
+	return githubSpec{owner: owner, repo: repo, ref: ref}, true, nil
+}
+
+func splitGithubRef(value string) (string, string, error) {
+	parts := strings.SplitN(value, "#", 2)
+	if len(parts) == 1 {
+		return value, "", nil
+	}
+	if parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid github ref")
+	}
+	return parts[0], parts[1], nil
+}
+
+func splitGithubOwnerRepo(value string) (string, string, error) {
+	if strings.Count(value, "/") != 1 {
+		return "", "", fmt.Errorf("invalid github owner/repo")
+	}
+	parts := strings.SplitN(value, "/", 2)
+	if parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid github owner/repo")
+	}
+	return parts[0], parts[1], nil
+}
+
+func githubSpecName(spec githubSpec) string {
+	return githubPackagePrefix + spec.owner + "/" + spec.repo
+}
+
 // packageBaseName returns the package name without scope.
-func packageBaseName(pkg string) string {
+func packageBaseName(pkg string) (string, error) {
+	if spec, ok, err := parseGithubShorthand(pkg); ok {
+		if err != nil {
+			return "", err
+		}
+		return spec.repo, nil
+	}
 	pkg = stripPackageVersion(pkg)
 	if strings.HasPrefix(pkg, "@") {
 		parts := strings.SplitN(pkg, "/", 2)
 		if len(parts) == 2 {
-			return parts[1]
+			return parts[1], nil
 		}
 	}
-	return pkg
+	return pkg, nil
 }
 
 // packageNameAndVersion returns the package name and explicit version (if present).
 func packageNameAndVersion(pkg string) (string, string) {
+	if spec, ok, err := parseGithubShorthand(pkg); ok {
+		if err != nil {
+			return pkg, ""
+		}
+		return githubSpecName(spec), spec.ref
+	}
 	if strings.HasPrefix(pkg, "@") {
 		at := strings.LastIndex(pkg, "@")
 		slash := strings.Index(pkg, "/")
@@ -350,20 +457,29 @@ func packageNameAndVersion(pkg string) (string, string) {
 }
 
 // imageFromPackage returns the image name derived from the package name.
-func imageFromPackage(pkg string, prefix string) string {
-	pkg = stripPackageVersion(pkg)
-	derived := pkg
-	if strings.HasPrefix(pkg, "@") {
-		derived = strings.TrimPrefix(pkg, "@")
+func imageFromPackage(pkg string, prefix string) (string, error) {
+	derived := ""
+	if spec, ok, err := parseGithubShorthand(pkg); ok {
+		if err != nil {
+			return "", err
+		}
+		derived = spec.owner + "/" + spec.repo
+	} else {
+		// Fallback to npm-style package specs (scoped/unscoped with optional @version).
+		pkg = stripPackageVersion(pkg)
+		derived = pkg
+		if strings.HasPrefix(pkg, "@") {
+			derived = strings.TrimPrefix(pkg, "@")
+		}
 	}
 	if prefix == "" {
-		return derived
+		return derived, nil
 	}
-	return prefix + derived
+	return prefix + derived, nil
 }
 
 // originLabelPairs builds docker label pairs for package metadata.
-func originLabelPairs(pkgSpec string, bin string) []string {
+func originLabelPairs(pkgSpec string, bin string, buildTimestamp string) []string {
 	if strings.TrimSpace(pkgSpec) == "" {
 		return nil
 	}
@@ -375,6 +491,9 @@ func originLabelPairs(pkgSpec string, bin string) []string {
 		pairs = append(pairs, fmt.Sprintf("%s=%s", labelPackageVersion, strconv.Quote(pkgVersion)))
 	}
 	pairs = append(pairs, fmt.Sprintf("%s=%s", labelBin, strconv.Quote(bin)))
+	if buildTimestamp != "" {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", labelBuildTimestamp, strconv.Quote(buildTimestamp)))
+	}
 	return pairs
 }
 
@@ -452,7 +571,7 @@ func renderDockerfile(opts buildFlags) string {
 			"RUN npm install -g "+opts.Package,
 		)
 	}
-	if labelPairs := originLabelPairs(opts.Package, opts.Bin); len(labelPairs) > 0 {
+	if labelPairs := originLabelPairs(opts.Package, opts.Bin, opts.BuildTimestamp); len(labelPairs) > 0 {
 		lines = append(lines, "LABEL "+strings.Join(labelPairs, " "))
 	}
 	if !opts.NoUser {

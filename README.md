@@ -55,6 +55,12 @@ Build the same package using Bun:
 go run . build --package eslint --package-manager bun --image acme/eslint-bun
 ```
 
+Build from a GitHub shorthand spec (optional ref):
+
+```bash
+go run . build --package github:acme/eslint#v1.2.3 --image-prefix cli/
+```
+
 Print the generated Dockerfile without building the image:
 
 ```bash
@@ -79,16 +85,18 @@ chmod +x ~/.local/bin/eslint
 - By default the image drops to the `node` user for npm builds and the `bun` user for Bun builds. Use `--no-user` for images without that user.
 - `--image-prefix` defaults to `cli/`.
 - If `--image` is omitted, it is derived from `--package`
+- `--package` supports `github:owner/repo[#ref]` shorthand. Defaults treat it like `@owner/repo`. Git refs are recorded in `io.cli2docker.package-version`. Use a full git URL for `.git` or non‑shorthand specs.
 - `--print-dockerfile` writes only the Dockerfile to stdout; warnings remain on stderr.
 - Shim scripts are printed to stdout. Redirect to a file on your `PATH`.
+- Shim defaults to `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--read-only` (experimental). Opt out with `--no-drop-caps`, `--allow-new-privileges`, and `--no-read-only`; warnings are printed to stderr.
 
 ## Provenance
 Built images include labels for origin metadata:
-`io.cli2docker.package`, `io.cli2docker.package-version` (only when explicit), and `io.cli2docker.bin`.
+`io.cli2docker.package`, `io.cli2docker.package-version` (only when explicit), `io.cli2docker.bin`, and `io.cli2docker.build-timestamp` (RFC3339 UTC).
 Inspect labels with:
 `docker image inspect --format '{{json .Config.Labels}}' <image>`
 
-Shim output includes comment lines when the labels are present:
+Shim output includes comment lines for package and bin labels when present:
 ```
 # io.cli2docker.package=eslint
 # io.cli2docker.package-version=1.2.3
