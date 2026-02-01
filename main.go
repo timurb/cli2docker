@@ -14,29 +14,29 @@ import (
 )
 
 type buildFlags struct {
-	Package        string
-	Bin            string
-	Image          string
-	ImagePrefix    string
-	Tag            string
-	Base           string
-	User           string
-	NoUser         bool
-	NoCache        bool
-	PackageManager string
+	Package         string
+	Bin             string
+	Image           string
+	ImagePrefix     string
+	Tag             string
+	Base            string
+	User            string
+	NoUser          bool
+	NoCache         bool
+	PackageManager  string
 	PrintDockerfile bool
-	BuildTimestamp string
+	BuildTimestamp  string
 }
 
 type shimFlags struct {
-	Image           string
-	Name            string
-	MountCwd        bool
-	MountHome       string
-	MountHomeRW     bool
-	NoDropCaps      bool
+	Image              string
+	Name               string
+	MountCwd           bool
+	MountHome          string
+	MountHomeRW        bool
+	NoDropCaps         bool
 	AllowNewPrivileges bool
-	NoReadOnly      bool
+	NoReadOnly         bool
 }
 
 const defaultWorkDir = "/work"
@@ -65,6 +65,7 @@ var (
 	ensureCommandFn    = ensureCommand
 	buildWithOptionsFn = buildWithOptions
 	readImageLabelsFn  = readImageLabels
+	runDockerBuildFn   = runDockerBuild
 )
 
 // main is the program entrypoint.
@@ -197,7 +198,7 @@ func newShimCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "shim",
 		Short: "Print a shim script to stdout",
-	RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ensureCommandFn("docker"); err != nil {
 				return err
 			}
@@ -328,10 +329,11 @@ func buildWithOptions(opts buildFlags) error {
 	if err := writeDockerfile(dockerfile, opts); err != nil {
 		return err
 	}
-	if err := runDockerBuild(tmpDir, image, opts.NoCache); err != nil {
+	if err := runDockerBuildFn(tmpDir, image, opts.NoCache); err != nil {
 		return err
 	}
-	fmt.Printf("Built %s\n", image)
+	fmt.Fprintf(os.Stderr, "Built %s\n", image)
+	fmt.Printf("cli2docker shim --image %s\n", image)
 	return nil
 }
 
@@ -598,8 +600,8 @@ func runDockerBuild(dir string, image string, noCache bool) error {
 	}
 	args = append(args, "-t", image, dir)
 	cmd := exec.Command("docker", args...)
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
-	fmt.Printf("Building image %s...\n", image)
+	fmt.Fprintf(os.Stderr, "Building image %s...\n", image)
 	return cmd.Run()
 }

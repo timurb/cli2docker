@@ -254,6 +254,9 @@ func TestPrintDockerfileMode(t *testing.T) {
 	if !strings.Contains(output, "ENTRYPOINT [\"eslint\"]") {
 		t.Fatalf("expected Dockerfile to include entrypoint, got %q", output)
 	}
+	if strings.Contains(output, "cli2docker shim") {
+		t.Fatalf("expected print-dockerfile output to omit shim command, got %q", output)
+	}
 }
 
 func TestPrintDockerfileWarningsToStderr(t *testing.T) {
@@ -286,6 +289,67 @@ func TestPrintDockerfileWarningsToStderr(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "warning:") {
 		t.Fatalf("expected stdout to contain only Dockerfile content, got %q", stdout.String())
+	}
+}
+
+func TestBuildWithOptionsPrintsShimCommand(t *testing.T) {
+	oldRunDockerBuild := runDockerBuildFn
+	t.Cleanup(func() { runDockerBuildFn = oldRunDockerBuild })
+	runDockerBuildFn = func(string, string, bool) error { return nil }
+
+	stdout, stderr, err := captureOutput(t, func() error {
+		return buildWithOptions(buildFlags{
+			Package:        "eslint",
+			Bin:            "eslint",
+			Image:          "acme/eslint",
+			Tag:            "v1",
+			Base:           defaultNPMBase,
+			User:           defaultNPMUser,
+			PackageManager: packageManagerNPM,
+		})
+	})
+	if err != nil {
+		t.Fatalf("buildWithOptions: %v", err)
+	}
+	expected := "cli2docker shim --image acme/eslint:v1"
+	if got := strings.TrimSpace(stdout); got != expected {
+		t.Fatalf("expected shim command %q, got %q", expected, got)
+	}
+	if strings.Contains(stdout, "Built ") || strings.Contains(stdout, "Building ") {
+		t.Fatalf("expected stdout to contain only shim command, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "Built acme/eslint:v1") {
+		t.Fatalf("expected stderr to include build status, got %q", stderr)
+	}
+}
+
+func TestBuildWithOptionsPrintsShimCommandDefaultTag(t *testing.T) {
+	oldRunDockerBuild := runDockerBuildFn
+	t.Cleanup(func() { runDockerBuildFn = oldRunDockerBuild })
+	runDockerBuildFn = func(string, string, bool) error { return nil }
+
+	stdout, stderr, err := captureOutput(t, func() error {
+		return buildWithOptions(buildFlags{
+			Package:        "eslint",
+			Bin:            "eslint",
+			Image:          "acme/eslint",
+			Base:           defaultNPMBase,
+			User:           defaultNPMUser,
+			PackageManager: packageManagerNPM,
+		})
+	})
+	if err != nil {
+		t.Fatalf("buildWithOptions: %v", err)
+	}
+	expected := "cli2docker shim --image acme/eslint:latest"
+	if got := strings.TrimSpace(stdout); got != expected {
+		t.Fatalf("expected shim command %q, got %q", expected, got)
+	}
+	if strings.Contains(stdout, "Built ") || strings.Contains(stdout, "Building ") {
+		t.Fatalf("expected stdout to contain only shim command, got %q", stdout)
+	}
+	if !strings.Contains(stderr, "Built acme/eslint:latest") {
+		t.Fatalf("expected stderr to include build status, got %q", stderr)
 	}
 }
 
@@ -379,6 +443,45 @@ func captureStderr(t *testing.T, fn func() error) (string, error) {
 		t.Fatalf("read stderr: %v", readErr)
 	}
 	return string(output), runErr
+}
+
+func captureOutput(t *testing.T, fn func() error) (string, string, error) {
+	t.Helper()
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stdout: %v", err)
+	}
+	defer stdoutReader.Close()
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe stderr: %v", err)
+	}
+	defer stderrReader.Close()
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	})
+
+	runErr := fn()
+	if closeErr := stdoutWriter.Close(); closeErr != nil && runErr == nil {
+		runErr = closeErr
+	}
+	if closeErr := stderrWriter.Close(); closeErr != nil && runErr == nil {
+		runErr = closeErr
+	}
+	stdoutOutput, readErr := io.ReadAll(stdoutReader)
+	if readErr != nil {
+		t.Fatalf("read stdout: %v", readErr)
+	}
+	stderrOutput, readErr := io.ReadAll(stderrReader)
+	if readErr != nil {
+		t.Fatalf("read stderr: %v", readErr)
+	}
+	return string(stdoutOutput), string(stderrOutput), runErr
 }
 
 // TestPackageNameAndVersion verifies package/version parsing.
