@@ -562,7 +562,11 @@ func renderDockerfile(opts buildFlags) string {
 		"FROM " + opts.Base,
 	}
 	if opts.PackageManager == packageManagerBun {
-		lines = append(lines, "RUN bun add -g "+opts.Package)
+		lines = append(lines,
+			"ENV BUN_INSTALL_GLOBAL_DIR=/usr/local/bun/global \\",
+			"    BUN_INSTALL_BIN=/usr/local/bin",
+			"RUN bun add -g "+opts.Package,
+		)
 	} else {
 		lines = append(lines,
 			"ENV NODE_ENV=production \\",

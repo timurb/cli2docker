@@ -614,6 +614,12 @@ func TestWriteDockerfileUsesBunInstall(t *testing.T) {
 		t.Fatalf("read dockerfile: %v", err)
 	}
 	text := string(content)
+	if !strings.Contains(text, "BUN_INSTALL_GLOBAL_DIR=/usr/local/bun/global") {
+		t.Fatalf("expected bun global dir env, got %q", text)
+	}
+	if !strings.Contains(text, "BUN_INSTALL_BIN=/usr/local/bin") {
+		t.Fatalf("expected bun install bin env, got %q", text)
+	}
 	if !strings.Contains(text, "bun add -g") {
 		t.Fatalf("expected bun install line, got %q", text)
 	}

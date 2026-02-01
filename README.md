@@ -82,6 +82,7 @@ chmod +x ~/.local/bin/eslint
 
 ## Notes
 - The default base image is `node:20-alpine` for npm builds and `oven/bun:1` for Bun builds. Use `--base` to override it.
+- Bun builds set `BUN_INSTALL_GLOBAL_DIR=/usr/local/bun/global` and `BUN_INSTALL_BIN=/usr/local/bin` so global installs land in a system path.
 - By default the image drops to the `node` user for npm builds and the `bun` user for Bun builds. Use `--no-user` for images without that user.
 - `--image-prefix` defaults to `cli/`.
 - If `--image` is omitted, it is derived from `--package`
