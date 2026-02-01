@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	pathpkg "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,13 +35,16 @@ type shimFlags struct {
 	MountCwd           bool
 	MountHome          string
 	MountHomeRW        bool
+	MountXDG           bool
+	MountXDGApp        string
+	MountXDGDirs       string
+	MountXDGRW         bool
 	NoDropCaps         bool
 	AllowNewPrivileges bool
 	NoReadOnly         bool
 }
 
 const defaultWorkDir = "/work"
-const defaultContainerHome = "/home/node"
 
 const (
 	defaultNPMBase = "node:20-alpine"
@@ -58,6 +62,7 @@ const labelPackage = "io.cli2docker.package"
 const labelPackageVersion = "io.cli2docker.package-version"
 const labelBin = "io.cli2docker.bin"
 const labelBuildTimestamp = "io.cli2docker.build-timestamp"
+const labelUser = "io.cli2docker.user"
 const githubPackagePrefix = "github:"
 
 // allow tests to stub side-effectful operations.
@@ -207,9 +212,9 @@ func newShimCmd() *cobra.Command {
 			}
 			labels, err := readImageLabelsFn(opts.Image)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "warning: unable to read image labels: %v\n", err)
+				return err
 			}
-			execLine, err := buildShimExecLine(opts)
+			execLine, err := buildShimExecLine(opts, labels)
 			if err != nil {
 				return err
 			}
@@ -224,6 +229,10 @@ func newShimCmd() *cobra.Command {
 	flags.BoolVar(&opts.MountCwd, "mount-cwd", false, "Mount current directory into the container")
 	flags.StringVar(&opts.MountHome, "mount-home", "", "Mount a directory from your home into the container home (read-only)")
 	flags.BoolVar(&opts.MountHomeRW, "mount-home-rw", false, "Mount the home directory path read-write")
+	flags.BoolVar(&opts.MountXDG, "mount-xdg", false, "Mount standard XDG app directories under your home")
+	flags.StringVar(&opts.MountXDGApp, "mount-xdg-app", "", "App subpath for XDG mounts (defaults from image labels)")
+	flags.StringVar(&opts.MountXDGDirs, "mount-xdg-dirs", "", "Comma-separated XDG dirs to mount (config,cache,data,state)")
+	flags.BoolVar(&opts.MountXDGRW, "mount-xdg-rw", false, "Mount XDG directories read-write")
 	flags.BoolVar(&opts.NoDropCaps, "no-drop-caps", false, "Do not drop Linux capabilities")
 	flags.BoolVar(&opts.AllowNewPrivileges, "allow-new-privileges", false, "Allow new privileges in the container")
 	flags.BoolVar(&opts.NoReadOnly, "no-read-only", false, "Disable read-only root filesystem (experimental default)")
@@ -232,7 +241,7 @@ func newShimCmd() *cobra.Command {
 }
 
 // buildShimExecLine builds the docker run command for the shim.
-func buildShimExecLine(opts shimFlags) (string, error) {
+func buildShimExecLine(opts shimFlags, labels map[string]string) (string, error) {
 	args := []string{"exec docker run --rm ${tty_flags}"}
 	if !opts.NoDropCaps {
 		args = append(args, "--cap-drop=ALL")
@@ -246,11 +255,15 @@ func buildShimExecLine(opts shimFlags) (string, error) {
 	if opts.MountCwd {
 		args = append(args, fmt.Sprintf("-v \"${PWD}:%s\" -w %s", defaultWorkDir, defaultWorkDir))
 	}
+	containerHome, err := containerHomeFromLabels(labels)
+	if err != nil {
+		return "", err
+	}
 	if opts.MountHomeRW && opts.MountHome == "" {
 		return "", fmt.Errorf("mount-home-rw requires --mount-home")
 	}
 	if opts.MountHome != "" {
-		hostPath, containerPath, err := resolveHomeMount(opts.MountHome)
+		hostPath, containerPath, err := resolveHomeMount(opts.MountHome, containerHome)
 		if err != nil {
 			return "", err
 		}
@@ -260,12 +273,19 @@ func buildShimExecLine(opts shimFlags) (string, error) {
 		}
 		args = append(args, fmt.Sprintf("-v %q", hostPath+":"+containerPath+":"+mode))
 	}
+	if opts.MountXDG {
+		mounts, err := resolveXDGMounts(opts, labels, containerHome)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, mounts...)
+	}
 	args = append(args, "\"${image_ref}\" \"$@\"")
 	return strings.Join(args, " "), nil
 }
 
 // resolveHomeMount returns the host and container paths for a home mount.
-func resolveHomeMount(path string) (string, string, error) {
+func resolveHomeMount(path string, containerHome string) (string, string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", "", fmt.Errorf("mount-home path is empty")
 	}
@@ -288,11 +308,142 @@ func resolveHomeMount(path string) (string, string, error) {
 	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
 		return "", "", fmt.Errorf("path must be within home: %s", home)
 	}
-	containerPath := defaultContainerHome
+	containerPath := containerHome
 	if relPath != "." {
-		containerPath = filepath.ToSlash(filepath.Join(defaultContainerHome, relPath))
+		containerPath = pathpkg.Join(containerHome, filepath.ToSlash(relPath))
 	}
 	return absPath, containerPath, nil
+}
+
+func containerHomeFromLabels(labels map[string]string) (string, error) {
+	user, err := requireLabel(labels, labelUser)
+	if err != nil {
+		return "", err
+	}
+	return containerHomeForUser(user), nil
+}
+
+func requireLabel(labels map[string]string, key string) (string, error) {
+	value, ok := labels[key]
+	if !ok || strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("missing required image label: %s", key)
+	}
+	return value, nil
+}
+
+func containerHomeForUser(user string) string {
+	if user == "root" {
+		return "/root"
+	}
+	return pathpkg.Join("/home", user)
+}
+
+type xdgDirSpec struct {
+	name         string
+	envVar       string
+	defaultRel   string
+	containerRel string
+}
+
+func resolveXDGMounts(opts shimFlags, labels map[string]string, containerHome string) ([]string, error) {
+	app, err := xdgAppSubpath(opts, labels)
+	if err != nil {
+		return nil, err
+	}
+	dirs, err := parseXDGDirs(opts.MountXDGDirs)
+	if err != nil {
+		return nil, err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	mode := "ro"
+	if opts.MountXDGRW {
+		mode = "rw"
+	}
+	mounts := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		base, err := resolveXDGBaseDir(home, dir)
+		if err != nil {
+			return nil, err
+		}
+		hostPath := filepath.Join(base, app)
+		containerPath := pathpkg.Join(containerHome, dir.containerRel, app)
+		mounts = append(mounts, fmt.Sprintf("-v %q", hostPath+":"+containerPath+":"+mode))
+	}
+	return mounts, nil
+}
+
+func xdgAppSubpath(opts shimFlags, labels map[string]string) (string, error) {
+	if strings.TrimSpace(opts.MountXDGApp) != "" {
+		return opts.MountXDGApp, nil
+	}
+	if value := strings.TrimSpace(labels[labelBin]); value != "" {
+		return value, nil
+	}
+	if value := strings.TrimSpace(labels[labelPackage]); value != "" {
+		return packageBaseName(value)
+	}
+	return "", fmt.Errorf("mount-xdg app name could not be derived from image labels")
+}
+
+func parseXDGDirs(raw string) ([]xdgDirSpec, error) {
+	all := []xdgDirSpec{
+		{name: "config", envVar: "XDG_CONFIG_HOME", defaultRel: ".config", containerRel: ".config"},
+		{name: "cache", envVar: "XDG_CACHE_HOME", defaultRel: ".cache", containerRel: ".cache"},
+		{name: "data", envVar: "XDG_DATA_HOME", defaultRel: ".local/share", containerRel: ".local/share"},
+		{name: "state", envVar: "XDG_STATE_HOME", defaultRel: ".local/state", containerRel: ".local/state"},
+	}
+	if strings.TrimSpace(raw) == "" {
+		return all, nil
+	}
+	lookup := map[string]xdgDirSpec{}
+	for _, dir := range all {
+		lookup[dir.name] = dir
+	}
+	seen := map[string]struct{}{}
+	parts := strings.Split(raw, ",")
+	out := make([]xdgDirSpec, 0, len(parts))
+	for _, part := range parts {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			return nil, fmt.Errorf("mount-xdg-dirs is empty")
+		}
+		dir, ok := lookup[name]
+		if !ok {
+			return nil, fmt.Errorf("invalid xdg dir: %s", name)
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, dir)
+	}
+	return out, nil
+}
+
+func resolveXDGBaseDir(home string, dir xdgDirSpec) (string, error) {
+	value := strings.TrimSpace(os.Getenv(dir.envVar))
+	if value == "" {
+		return filepath.Join(home, dir.defaultRel), nil
+	}
+	expanded, err := expandHomePath(home, value)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(expanded) {
+		expanded = filepath.Join(home, expanded)
+	}
+	absPath := filepath.Clean(expanded)
+	relPath, err := filepath.Rel(home, absPath)
+	if err != nil {
+		return "", err
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("xdg base dir must be within home: %s", home)
+	}
+	return absPath, nil
 }
 
 // expandHomePath expands ~ and ~/ paths using the provided home directory.
@@ -481,7 +632,7 @@ func imageFromPackage(pkg string, prefix string) (string, error) {
 }
 
 // originLabelPairs builds docker label pairs for package metadata.
-func originLabelPairs(pkgSpec string, bin string, buildTimestamp string) []string {
+func originLabelPairs(pkgSpec string, bin string, buildTimestamp string, user string) []string {
 	if strings.TrimSpace(pkgSpec) == "" {
 		return nil
 	}
@@ -495,6 +646,9 @@ func originLabelPairs(pkgSpec string, bin string, buildTimestamp string) []strin
 	pairs = append(pairs, fmt.Sprintf("%s=%s", labelBin, strconv.Quote(bin)))
 	if buildTimestamp != "" {
 		pairs = append(pairs, fmt.Sprintf("%s=%s", labelBuildTimestamp, strconv.Quote(buildTimestamp)))
+	}
+	if strings.TrimSpace(user) != "" {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", labelUser, strconv.Quote(user)))
 	}
 	return pairs
 }
@@ -577,7 +731,11 @@ func renderDockerfile(opts buildFlags) string {
 			"RUN npm install -g "+opts.Package,
 		)
 	}
-	if labelPairs := originLabelPairs(opts.Package, opts.Bin, opts.BuildTimestamp); len(labelPairs) > 0 {
+	labelUserValue := opts.User
+	if opts.NoUser {
+		labelUserValue = "root"
+	}
+	if labelPairs := originLabelPairs(opts.Package, opts.Bin, opts.BuildTimestamp, labelUserValue); len(labelPairs) > 0 {
 		lines = append(lines, "LABEL "+strings.Join(labelPairs, " "))
 	}
 	if !opts.NoUser {

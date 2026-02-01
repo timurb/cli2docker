@@ -354,7 +354,9 @@ func TestBuildWithOptionsPrintsShimCommandDefaultTag(t *testing.T) {
 }
 
 func TestBuildShimExecLineDefaults(t *testing.T) {
-	execLine, err := buildShimExecLine(shimFlags{})
+	execLine, err := buildShimExecLine(shimFlags{}, map[string]string{
+		labelUser: "node",
+	})
 	if err != nil {
 		t.Fatalf("buildShimExecLine: %v", err)
 	}
@@ -373,9 +375,11 @@ func TestBuildShimExecLineDefaults(t *testing.T) {
 
 func TestBuildShimExecLineOptOuts(t *testing.T) {
 	execLine, err := buildShimExecLine(shimFlags{
-		NoDropCaps:      true,
+		NoDropCaps:         true,
 		AllowNewPrivileges: true,
-		NoReadOnly:      true,
+		NoReadOnly:         true,
+	}, map[string]string{
+		labelUser: "node",
 	})
 	if err != nil {
 		t.Fatalf("buildShimExecLine: %v", err)
@@ -392,6 +396,53 @@ func TestBuildShimExecLineOptOuts(t *testing.T) {
 	}
 }
 
+func TestBuildShimExecLineMountHomeUsesUserLabel(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	execLine, err := buildShimExecLine(shimFlags{
+		MountHome: "config",
+	}, map[string]string{
+		labelUser: "bun",
+	})
+	if err != nil {
+		t.Fatalf("buildShimExecLine: %v", err)
+	}
+	if !strings.Contains(execLine, `"/tmp/home/config:/home/bun/config:ro"`) {
+		t.Fatalf("expected bun home mount, got %q", execLine)
+	}
+}
+
+func TestBuildShimExecLineMountHomeUsesRootLabel(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	execLine, err := buildShimExecLine(shimFlags{
+		MountHome: "config",
+	}, map[string]string{
+		labelUser: "root",
+	})
+	if err != nil {
+		t.Fatalf("buildShimExecLine: %v", err)
+	}
+	if !strings.Contains(execLine, `"/tmp/home/config:/root/config:ro"`) {
+		t.Fatalf("expected root home mount, got %q", execLine)
+	}
+}
+
+func TestBuildShimExecLineXDGConfigUsesUserLabel(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home")
+	execLine, err := buildShimExecLine(shimFlags{
+		MountXDG:     true,
+		MountXDGApp:  "eslint",
+		MountXDGDirs: "config",
+	}, map[string]string{
+		labelUser: "bun",
+	})
+	if err != nil {
+		t.Fatalf("buildShimExecLine: %v", err)
+	}
+	if !strings.Contains(execLine, `"/tmp/home/.config/eslint:/home/bun/.config/eslint:ro"`) {
+		t.Fatalf("expected xdg config mount, got %q", execLine)
+	}
+}
+
 func TestShimReadOnlyWarning(t *testing.T) {
 	oldEnsure := ensureCommandFn
 	oldReadLabels := readImageLabelsFn
@@ -401,7 +452,11 @@ func TestShimReadOnlyWarning(t *testing.T) {
 	})
 
 	ensureCommandFn = func(string) error { return nil }
-	readImageLabelsFn = func(string) (map[string]string, error) { return map[string]string{}, nil }
+	readImageLabelsFn = func(string) (map[string]string, error) {
+		return map[string]string{
+			labelUser: "node",
+		}, nil
+	}
 
 	cmd := newShimCmd()
 	cmd.SetArgs([]string{"--image", "acme/eslint:latest"})
@@ -420,6 +475,24 @@ func TestShimReadOnlyWarning(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "warning:") {
 		t.Fatalf("expected stdout to contain only shim content, got %q", stdout.String())
+	}
+}
+
+func TestShimRequiresUserLabel(t *testing.T) {
+	oldEnsure := ensureCommandFn
+	oldReadLabels := readImageLabelsFn
+	t.Cleanup(func() {
+		ensureCommandFn = oldEnsure
+		readImageLabelsFn = oldReadLabels
+	})
+
+	ensureCommandFn = func(string) error { return nil }
+	readImageLabelsFn = func(string) (map[string]string, error) { return map[string]string{}, nil }
+
+	cmd := newShimCmd()
+	cmd.SetArgs([]string{"--image", "acme/eslint:latest"})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "missing required image label") {
+		t.Fatalf("expected missing label error, got %v", err)
 	}
 }
 
@@ -511,6 +584,7 @@ func TestPackageNameAndVersion(t *testing.T) {
 // TestOriginLabelPairs verifies label generation for origin metadata.
 func TestOriginLabelPairs(t *testing.T) {
 	timestamp := "2026-01-31T12:34:56Z"
+	user := "node"
 	cases := []struct {
 		name     string
 		pkgSpec  string
@@ -525,6 +599,7 @@ func TestOriginLabelPairs(t *testing.T) {
 				`io.cli2docker.package="eslint"`,
 				`io.cli2docker.bin="eslint"`,
 				`io.cli2docker.build-timestamp="2026-01-31T12:34:56Z"`,
+				`io.cli2docker.user="node"`,
 			},
 		},
 		{
@@ -536,6 +611,7 @@ func TestOriginLabelPairs(t *testing.T) {
 				`io.cli2docker.package-version="1.2.3"`,
 				`io.cli2docker.bin="eslint-cli"`,
 				`io.cli2docker.build-timestamp="2026-01-31T12:34:56Z"`,
+				`io.cli2docker.user="node"`,
 			},
 		},
 		{
@@ -547,11 +623,12 @@ func TestOriginLabelPairs(t *testing.T) {
 				`io.cli2docker.package-version="v1.2.3"`,
 				`io.cli2docker.bin="eslint"`,
 				`io.cli2docker.build-timestamp="2026-01-31T12:34:56Z"`,
+				`io.cli2docker.user="node"`,
 			},
 		},
 	}
 	for _, tc := range cases {
-		got := originLabelPairs(tc.pkgSpec, tc.bin, timestamp)
+		got := originLabelPairs(tc.pkgSpec, tc.bin, timestamp, user)
 		if len(got) != len(tc.expected) {
 			t.Fatalf("%s: expected %d labels, got %d", tc.name, len(tc.expected), len(got))
 		}
@@ -667,6 +744,36 @@ func TestWriteDockerfileIncludesOriginLabels(t *testing.T) {
 	}
 	if !strings.Contains(labelLine, `io.cli2docker.build-timestamp="2026-01-31T12:34:56Z"`) {
 		t.Fatalf("expected build timestamp label in %q", labelLine)
+	}
+	if !strings.Contains(labelLine, `io.cli2docker.user="node"`) {
+		t.Fatalf("expected user label in %q", labelLine)
+	}
+}
+
+func TestWriteDockerfileIncludesRootUserLabelWhenNoUser(t *testing.T) {
+	tmpDir := t.TempDir()
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	opts := buildFlags{
+		Package:        "eslint",
+		Bin:            "eslint",
+		Base:           defaultNPMBase,
+		User:           defaultNPMUser,
+		NoUser:         true,
+		PackageManager: packageManagerNPM,
+		BuildTimestamp: "2026-01-31T12:34:56Z",
+	}
+	if err := writeDockerfile(dockerfilePath, opts); err != nil {
+		t.Fatalf("writeDockerfile: %v", err)
+	}
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("read dockerfile: %v", err)
+	}
+	if !strings.Contains(string(content), `io.cli2docker.user="root"`) {
+		t.Fatalf("expected root user label in %q", string(content))
+	}
+	if strings.Contains(string(content), "\nUSER ") {
+		t.Fatalf("did not expect USER instruction when no-user is set")
 	}
 }
 
