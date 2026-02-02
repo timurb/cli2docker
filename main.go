@@ -686,6 +686,9 @@ func originCommentLines(labels map[string]string) []string {
 	if value, ok := labels[labelBin]; ok {
 		lines = append(lines, "# "+labelBin+"="+value)
 	}
+	if value, ok := labels[labelBuildTimestamp]; ok {
+		lines = append(lines, "# "+labelBuildTimestamp+"="+value)
+	}
 	return lines
 }
 

@@ -671,6 +671,19 @@ func TestOriginCommentLines(t *testing.T) {
 				"# io.cli2docker.bin=eslint-cli",
 			},
 		},
+		{
+			name: "with-build-timestamp",
+			labels: map[string]string{
+				labelPackage:        "eslint",
+				labelBin:            "eslint",
+				labelBuildTimestamp: "2026-02-01T00:00:00Z",
+			},
+			expected: []string{
+				"# io.cli2docker.package=eslint",
+				"# io.cli2docker.bin=eslint",
+				"# io.cli2docker.build-timestamp=2026-02-01T00:00:00Z",
+			},
+		},
 	}
 	for _, tc := range cases {
 		got := originCommentLines(tc.labels)
@@ -690,6 +703,7 @@ func TestBuildShimScriptIncludesOriginComments(t *testing.T) {
 		labelPackage:        "@acme/eslint",
 		labelPackageVersion: "1.2.3",
 		labelBin:            "eslint-cli",
+		labelBuildTimestamp: "2026-02-01T00:00:00Z",
 	}
 	execLine := "exec docker run --rm ${tty_flags} \"${image_ref}\" \"$@\""
 	script := buildShimScript("acme/eslint:latest", execLine, labels)
@@ -701,6 +715,9 @@ func TestBuildShimScriptIncludesOriginComments(t *testing.T) {
 	}
 	if !strings.Contains(script, "# io.cli2docker.bin=eslint-cli") {
 		t.Fatalf("expected bin comment in shim script")
+	}
+	if !strings.Contains(script, "# io.cli2docker.build-timestamp=2026-02-01T00:00:00Z") {
+		t.Fatalf("expected build-timestamp comment in shim script")
 	}
 }
 

@@ -257,14 +257,6 @@ RECOMMENDATION: [Which + why, or "need your input on X"]
 2.  **Test Explosion:** If a function needs >3 negative test cases (invalid inputs), suggest tightening the input types instead of writing the tests.
 3.  **Ambiguity Check:** If you have to use `any` or `interface{}` for core logic, ask if we can strictly type it instead.
 
-#### Tools for quality testing
-
-For checking conformance of function sizes and cognitive complexity use the following scripts:
-- `scripts/analyze_function_sizes.py` - analyze functions sizes
-- `scripts/analyze_cognitive_complexity.py` - analyze cognitive complexity
-
-These scripts are located in `scripts/` directory and don't participate in project logic and workings.
-
 #### Approaches for reduction of complexity
 - Reduce nesting
 - Separate logic into standalone function
