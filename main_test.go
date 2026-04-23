@@ -361,6 +361,7 @@ func TestBuildShimExecLineDefaults(t *testing.T) {
 		t.Fatalf("buildShimExecLine: %v", err)
 	}
 	expected := []string{
+		"MSYS2_ARG_CONV_EXCL='*' exec docker run --rm ${tty_flags}",
 		"--cap-drop=ALL",
 		"--security-opt=no-new-privileges",
 		"--read-only",
@@ -370,6 +371,23 @@ func TestBuildShimExecLineDefaults(t *testing.T) {
 		if !strings.Contains(execLine, needle) {
 			t.Fatalf("expected exec line to include %q, got %q", needle, execLine)
 		}
+	}
+}
+
+func TestBuildShimExecLineMountCwdUsesBindMount(t *testing.T) {
+	execLine, err := buildShimExecLine(shimFlags{
+		MountCwd: true,
+	}, map[string]string{
+		labelUser: "node",
+	})
+	if err != nil {
+		t.Fatalf("buildShimExecLine: %v", err)
+	}
+	if !strings.Contains(execLine, `--mount "type=bind,src=${cwd_host},dst=/work"`) {
+		t.Fatalf("expected cwd bind mount, got %q", execLine)
+	}
+	if !strings.Contains(execLine, `-w /work`) {
+		t.Fatalf("expected workdir flag, got %q", execLine)
 	}
 }
 
@@ -406,7 +424,7 @@ func TestBuildShimExecLineMountHomeUsesUserLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildShimExecLine: %v", err)
 	}
-	if !strings.Contains(execLine, `"/tmp/home/config:/home/bun/config:ro"`) {
+	if !strings.Contains(execLine, `--mount "type=bind,src=/tmp/home/config,dst=/home/bun/config,readonly,bind-create-src"`) {
 		t.Fatalf("expected bun home mount, got %q", execLine)
 	}
 }
@@ -421,7 +439,7 @@ func TestBuildShimExecLineMountHomeUsesRootLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildShimExecLine: %v", err)
 	}
-	if !strings.Contains(execLine, `"/tmp/home/config:/root/config:ro"`) {
+	if !strings.Contains(execLine, `--mount "type=bind,src=/tmp/home/config,dst=/root/config,readonly,bind-create-src"`) {
 		t.Fatalf("expected root home mount, got %q", execLine)
 	}
 }
@@ -438,8 +456,26 @@ func TestBuildShimExecLineXDGConfigUsesUserLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildShimExecLine: %v", err)
 	}
-	if !strings.Contains(execLine, `"/tmp/home/.config/eslint:/home/bun/.config/eslint:ro"`) {
+	if !strings.Contains(execLine, `--mount "type=bind,src=/tmp/home/.config/eslint,dst=/home/bun/.config/eslint,readonly,bind-create-src"`) {
 		t.Fatalf("expected xdg config mount, got %q", execLine)
+	}
+}
+
+func TestDockerHostPathForWindows(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{name: "windows-volume", input: `C:\Users\alice\.config`, expected: `C:/Users/alice/.config`},
+		{name: "msys-drive", input: `/c/Users/alice/.config`, expected: `C:/Users/alice/.config`},
+		{name: "windows-volume-lower", input: `c:/Users/alice/.config`, expected: `C:/Users/alice/.config`},
+	}
+	for _, tc := range cases {
+		got := dockerHostPathForOS(tc.input, "windows")
+		if got != tc.expected {
+			t.Fatalf("%s: expected %q, got %q", tc.name, tc.expected, got)
+		}
 	}
 }
 
@@ -718,6 +754,20 @@ func TestBuildShimScriptIncludesOriginComments(t *testing.T) {
 	}
 	if !strings.Contains(script, "# io.cli2docker.build-timestamp=2026-02-01T00:00:00Z") {
 		t.Fatalf("expected build-timestamp comment in shim script")
+	}
+}
+
+func TestBuildShimScriptAddsGitBashCwdHelper(t *testing.T) {
+	execLine := `MSYS2_ARG_CONV_EXCL='*' exec docker run --rm ${tty_flags} --mount "type=bind,src=${cwd_host},dst=/work" -w /work "${image_ref}" "$@"`
+	script := buildShimScript("acme/eslint:latest", execLine, map[string]string{})
+	if !strings.Contains(script, "cwd_host=${PWD}") {
+		t.Fatalf("expected cwd host variable initialization in shim script")
+	}
+	if !strings.Contains(script, `cygpath -m "$PWD"`) {
+		t.Fatalf("expected git-bash cygpath conversion in shim script")
+	}
+	if !strings.Contains(script, `${MSYSTEM:-}`) {
+		t.Fatalf("expected MSYSTEM detection in shim script")
 	}
 }
 

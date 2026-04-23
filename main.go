@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	pathpkg "path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -202,7 +203,8 @@ func newShimCmd() *cobra.Command {
 	opts := shimFlags{}
 	cmd := &cobra.Command{
 		Use:   "shim",
-		Short: "Print a shim script to stdout",
+		Short: "Print a POSIX shim script to stdout",
+		Long:  "Print a POSIX sh shim script to stdout. Supported environments include Unix shells, WSL, and git-bash. Native PowerShell and cmd.exe shims are out of scope.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := ensureCommandFn("docker"); err != nil {
 				return err
@@ -242,7 +244,7 @@ func newShimCmd() *cobra.Command {
 
 // buildShimExecLine builds the docker run command for the shim.
 func buildShimExecLine(opts shimFlags, labels map[string]string) (string, error) {
-	args := []string{"exec docker run --rm ${tty_flags}"}
+	args := []string{"MSYS2_ARG_CONV_EXCL='*' exec docker run --rm ${tty_flags}"}
 	if !opts.NoDropCaps {
 		args = append(args, "--cap-drop=ALL")
 	}
@@ -253,7 +255,7 @@ func buildShimExecLine(opts shimFlags, labels map[string]string) (string, error)
 		args = append(args, "--read-only")
 	}
 	if opts.MountCwd {
-		args = append(args, fmt.Sprintf("-v \"${PWD}:%s\" -w %s", defaultWorkDir, defaultWorkDir))
+		args = append(args, bindMountArg("${cwd_host}", defaultWorkDir, false, false), "-w "+defaultWorkDir)
 	}
 	containerHome, err := containerHomeFromLabels(labels)
 	if err != nil {
@@ -267,11 +269,7 @@ func buildShimExecLine(opts shimFlags, labels map[string]string) (string, error)
 		if err != nil {
 			return "", err
 		}
-		mode := "ro"
-		if opts.MountHomeRW {
-			mode = "rw"
-		}
-		args = append(args, fmt.Sprintf("-v %q", hostPath+":"+containerPath+":"+mode))
+		args = append(args, bindMountArg(dockerHostPath(hostPath), containerPath, !opts.MountHomeRW, true))
 	}
 	if opts.MountXDG {
 		mounts, err := resolveXDGMounts(opts, labels, containerHome)
@@ -282,6 +280,46 @@ func buildShimExecLine(opts shimFlags, labels map[string]string) (string, error)
 	}
 	args = append(args, "\"${image_ref}\" \"$@\"")
 	return strings.Join(args, " "), nil
+}
+
+func bindMountArg(source string, target string, readOnly bool, createSrc bool) string {
+	mount := fmt.Sprintf("type=bind,src=%s,dst=%s", source, target)
+	if readOnly {
+		mount += ",readonly"
+	}
+	if createSrc {
+		mount += ",bind-create-src"
+	}
+	return fmt.Sprintf(`--mount "%s"`, mount)
+}
+
+func dockerHostPath(path string) string {
+	return dockerHostPathForOS(path, runtime.GOOS)
+}
+
+func dockerHostPathForOS(path string, goos string) string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+	if goos != "windows" {
+		return normalized
+	}
+	if hasWindowsDrivePrefix(normalized) {
+		return strings.ToUpper(normalized[:1]) + normalized[1:]
+	}
+	if len(normalized) == 2 && normalized[0] == '/' && isDriveLetter(normalized[1]) {
+		return strings.ToUpper(normalized[1:2]) + ":/"
+	}
+	if len(normalized) >= 3 && normalized[0] == '/' && isDriveLetter(normalized[1]) && normalized[2] == '/' {
+		return strings.ToUpper(normalized[1:2]) + ":" + normalized[2:]
+	}
+	return normalized
+}
+
+func hasWindowsDrivePrefix(path string) bool {
+	return len(path) >= 2 && isDriveLetter(path[0]) && path[1] == ':'
+}
+
+func isDriveLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // resolveHomeMount returns the host and container paths for a home mount.
@@ -370,7 +408,7 @@ func resolveXDGMounts(opts shimFlags, labels map[string]string, containerHome st
 		}
 		hostPath := filepath.Join(base, app)
 		containerPath := pathpkg.Join(containerHome, dir.containerRel, app)
-		mounts = append(mounts, fmt.Sprintf("-v %q", hostPath+":"+containerPath+":"+mode))
+		mounts = append(mounts, bindMountArg(dockerHostPath(hostPath), containerPath, mode == "ro", true))
 	}
 	return mounts, nil
 }
@@ -705,6 +743,17 @@ func buildShimScript(image string, execLine string, labels map[string]string) st
 	lines = append(lines,
 		fmt.Sprintf("image_ref=%q", image),
 		"",
+	)
+	if strings.Contains(execLine, "${cwd_host}") {
+		lines = append(lines,
+			"cwd_host=${PWD}",
+			"if [ -n \"${MSYSTEM:-}\" ] && command -v cygpath >/dev/null 2>&1; then",
+			"  cwd_host=$(cygpath -m \"$PWD\")",
+			"fi",
+			"",
+		)
+	}
+	lines = append(lines,
 		"if [ -t 0 ]; then",
 		"  tty_flags=\"-it\"",
 		"else",

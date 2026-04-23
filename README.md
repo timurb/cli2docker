@@ -80,6 +80,8 @@ go run . shim --image acme/eslint:latest > ~/.local/bin/eslint
 chmod +x ~/.local/bin/eslint
 ```
 
+On Windows, run generated shims from `git-bash` or `WSL`. Native `PowerShell` and `cmd.exe` shims are not generated.
+
 ## Notes
 - The default base image is `node:20-alpine` for npm builds and `oven/bun:1` for Bun builds. Use `--base` to override it.
 - Bun builds set `BUN_INSTALL_GLOBAL_DIR=/usr/local/bun/global` and `BUN_INSTALL_BIN=/usr/local/bin` so global installs land in a system path.
@@ -89,6 +91,7 @@ chmod +x ~/.local/bin/eslint
 - `--package` supports `github:owner/repo[#ref]` shorthand. Defaults treat it like `@owner/repo`. Git refs are recorded in `io.cli2docker.package-version`. Use a full git URL for `.git` or non‑shorthand specs.
 - `--print-dockerfile` writes only the Dockerfile to stdout; warnings remain on stderr.
 - Shim scripts are printed to stdout. Redirect to a file on your `PATH`.
+- Generated shims are POSIX `sh` scripts. On Windows, supported environments are `git-bash` and `WSL`; native `PowerShell` and `cmd.exe` are out of scope.
 - Shim defaults to `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--read-only` (experimental). Opt out with `--no-drop-caps`, `--allow-new-privileges`, and `--no-read-only`; warnings are printed to stderr.
 
 ## Provenance
