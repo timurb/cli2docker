@@ -107,6 +107,8 @@ Shim output includes comment lines for package and bin labels when present:
 ## Build
 
 ```bash
-go build -o cli2docker .
+make build
+make build-windows
+# optional: make build-windows WINDOWS_ARCH=arm64
 ./cli2docker build --package eslint --bin eslint --image acme/eslint
 ```
